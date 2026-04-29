@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Probar Conexiones | SAP Web Local{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <h2>Probar Conexiones</h2>
+    <p>
+      Este módulo valida conectividad a SAP, PostgreSQL y MySQL sin ejecutar reportes ni procesos pesados.
+    </p>
+
+    <form method="post">
+      <div class="actions">
+        <button class="button" type="submit">Probar conexiones</button>
+        <a class="button secondary" href="/">Volver al inicio</a>
+      </div>
+    </form>
+
+    {% if error %}
+      <div class="alert error">{{ error }}</div>
+    {% endif %}
+  </section>
+
+  {% if result %}
+    <section class="panel">
+      <h2>Resultado</h2>
+      <div class="summary-grid">
+        <div class="summary-card">
+          <span>SAP</span>
+          <strong>{{ result.sap }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>PostgreSQL</span>
+          <strong>{{ result.postgres }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>MySQL</span>
+          <strong>{{ result.mysql }}</strong>
+        </div>
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

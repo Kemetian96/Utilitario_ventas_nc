@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Revisar Hilos | SAP Web Local{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <h2>Revisar Hilos</h2>
+    <p>
+      Consulta la tabla auxiliar de hilos pendientes en SAP y la muestra como una tabla compacta.
+    </p>
+
+    <form method="post">
+      <div class="actions">
+        <button class="button" type="submit">Consultar hilos</button>
+        <a class="button secondary" href="/">Volver al inicio</a>
+      </div>
+    </form>
+
+    {% if error %}
+      <div class="alert error">{{ error }}</div>
+    {% endif %}
+  </section>
+
+  {% if rows is not none %}
+    <section class="panel">
+      <h2>Resultado</h2>
+      {% if rows %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {% for col in cols %}
+                  <th>{{ col }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+                <tr>
+                  {% for value in row %}
+                    <td>{{ value }}</td>
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="alert ok">No se encontraron hilos pendientes.</div>
+      {% endif %}
+    </section>
+  {% endif %}
+{% endblock %}

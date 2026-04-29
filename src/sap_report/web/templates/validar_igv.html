@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Validar IGV | SAP Web Local{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <h2>Validar IGV</h2>
+    <p>
+      Ejecuta el flujo operativo completo de IGV: cruces SAP/MySQL, actualización de artículos y SPs de movimiento.
+    </p>
+
+    <form method="post" data-loading-text="Ejecutando validación IGV y cruces operativos. Esto puede tardar un poco más.">
+      <div class="actions">
+        <button class="button" type="submit">Ejecutar validación IGV</button>
+        <a class="button secondary" href="/">Volver al inicio</a>
+      </div>
+    </form>
+
+    <p class="meta-text">Este módulo sí realiza acciones operativas. Úsalo igual que en la app de escritorio.</p>
+
+    {% if error %}
+      <div class="alert error">{{ error }}</div>
+    {% endif %}
+  </section>
+
+  {% if result %}
+    <section class="panel">
+      <h2>Resultado</h2>
+      <div class="summary-grid">
+        <div class="summary-card">
+          <span>DocEntry SAP</span>
+          <strong class="number">{{ result.sap_docentries }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>Items totales</span>
+          <strong class="number">{{ result.items_total }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>Items IGV</span>
+          <strong class="number">{{ result.items_igv }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>Upd Comercial</span>
+          <strong class="number">{{ result.upd_comercial }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>Upd Pedral</span>
+          <strong class="number">{{ result.upd_pedral }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>Upd Hilos</span>
+          <strong class="number">{{ result.upd_hilos }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>SP ORDER</span>
+          <strong class="number">{{ result.sp_orders }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>SP RMA</span>
+          <strong class="number">{{ result.sp_rmas }}</strong>
+        </div>
+      </div>
+
+      {% if result.docentries %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>U_BOT_DOCENTRY</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for value in result.docentries %}
+                <tr>
+                  <td>{{ value }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="alert ok">No se devolvieron docentries para mostrar.</div>
+      {% endif %}
+    </section>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Validar Pagos | SAP Web Local{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <h2>Validar Pagos</h2>
+    <p>
+      Ejecuta la conciliación para una fecha y un medio de pago. El sistema consulta SAP y TUTATI,
+      compara órdenes y te marca faltantes o diferencias de monto.
+    </p>
+
+    <form method="post" data-loading-text="Consultando SAP y TUTATI para comparar pagos.">
+      <div class="form-grid">
+        <div class="field">
+          <label for="fecha">Fecha</label>
+          <input id="fecha" name="fecha" type="date" value="{{ fecha_value }}" required>
+        </div>
+
+        <div class="field">
+          <label for="tipo_pago">Tipo de pago</label>
+          <select id="tipo_pago" name="tipo_pago" required>
+            {% for option in payment_options %}
+              <option value="{{ option }}" {% if option == tipo_pago_value %}selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="button" type="submit">Ejecutar validación</button>
+        <a class="button secondary" href="/">Volver al inicio</a>
+      </div>
+    </form>
+
+    {% if error %}
+      <div class="alert error">{{ error }}</div>
+    {% endif %}
+  </section>
+
+  {% if result %}
+    <section class="panel">
+      <h2>Resultado</h2>
+      <p>
+        Fecha: <strong>{{ result.fecha }}</strong> |
+        Tipo: <strong>{{ result.tipo_pago }}</strong>
+      </p>
+
+      <div class="summary-grid">
+        <div class="summary-card">
+          <span>SAP</span>
+          <strong>{{ result.sap_total }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>TUTATI</span>
+          <strong>{{ result.tutati_total }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>Faltan en SAP</span>
+          <strong>{{ result.faltan_en_sap }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>Faltan en TUTATI</span>
+          <strong>{{ result.faltan_en_tutati }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>Montos diferentes</span>
+          <strong>{{ result.montos_diferentes }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>Coinciden</span>
+          <strong>{{ result.coinciden }}</strong>
+        </div>
+      </div>
+
+      {% if result.rows %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {% for col in result.cols %}
+                  <th>{{ col }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in result.rows %}
+                <tr>
+                  <td>
+                    <span class="state-pill {% if row[0] == 'MONTO_DIFERENTE' %}warn{% else %}bad{% endif %}">
+                      {{ row[0] }}
+                    </span>
+                  </td>
+                  <td>{{ row[1] }}</td>
+                  <td>{{ "%.2f"|format(row[2]) }}</td>
+                  <td>{{ "%.2f"|format(row[3]) }}</td>
+                  <td>{{ "%.2f"|format(row[4]) }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="alert ok">No se detectaron diferencias para esa fecha y ese tipo de pago.</div>
+      {% endif %}
+    </section>
+  {% endif %}
+{% endblock %}

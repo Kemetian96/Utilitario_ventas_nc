@@ -1,0 +1,4 @@
+UPDATE B1H_INVERSIONES_PROD."@SGE_TRAN"
+SET "U_BOT_HILOS" = 95,
+    "U_BOT_FLAG_ANULACION" = 'S'
+WHERE "DocEntry" IN ({{docentries_in}});

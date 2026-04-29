@@ -1,0 +1,9 @@
+flask
+pandas
+openpyxl
+psycopg2-binary
+python-dotenv
+tkcalendar
+pytest
+hdbcli
+pymysql

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Validar Artículos | SAP Web Local{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <h2>Validar Artículos</h2>
+    <p>
+      Ejecuta primero el patch ETL para ayer y anteayer, luego consulta SAP y devuelve las URLs de validación.
+    </p>
+
+    <form method="post" data-loading-text="Ejecutando patch ETL y buscando URLs de validación.">
+      <div class="actions">
+        <button class="button" type="submit">Ejecutar validación</button>
+        <a class="button secondary" href="/">Volver al inicio</a>
+      </div>
+    </form>
+
+    <p class="meta-text">En la versión web no abrimos pestañas automáticamente: te dejamos la lista lista para abrir.</p>
+
+    {% if error %}
+      <div class="alert error">{{ error }}</div>
+    {% endif %}
+  </section>
+
+  {% if urls is not none %}
+    <section class="panel">
+      <h2>Resultado</h2>
+      {% if urls %}
+        <div class="alert ok">Se detectaron {{ urls|length }} URLs para revisar.</div>
+        <div class="links-list">
+          {% for url in urls %}
+            <a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ url }}</a>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="alert ok">No se detectaron URLs para ese proceso.</div>
+      {% endif %}
+    </section>
+  {% endif %}
+{% endblock %}
