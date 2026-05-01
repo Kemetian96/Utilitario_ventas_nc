@@ -1,108 +1,327 @@
 {% extends "base.html" %}
 
-{% block title %}Validar Pagos | SAP Web Local{% endblock %}
+{% block title %}Validar Pagos | SAP Web{% endblock %}
 
 {% block content %}
-  <section class="panel">
-    <h2>Validar Pagos</h2>
-    <p>
-      Ejecuta la conciliación para una fecha y un medio de pago. El sistema consulta SAP y TUTATI,
-      compara órdenes y te marca faltantes o diferencias de monto.
-    </p>
+  <style>
+    .content { max-width: 1080px; }
+    .vp-shell { display: grid; grid-template-columns: 1fr 220px; gap: 14px; align-items: start; }
+    .vp-main  { display: grid; gap: 14px; }
 
-    <form method="post" data-loading-text="Consultando SAP y TUTATI para comparar pagos.">
-      <div class="form-grid">
-        <div class="field">
-          <label for="fecha">Fecha</label>
-          <input id="fecha" name="fecha" type="date" value="{{ fecha_value }}" required>
-        </div>
+    .resumen-panel {
+      position: sticky;
+      top: 16px;
+      padding: 14px 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+    }
+    .resumen-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .resumen-title {
+      font-size: 0.73rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    .resumen-fecha-tag {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-bottom: 10px;
+      display: block;
+    }
+    .resumen-items { display: grid; gap: 6px; }
+    .resumen-item {
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--panel);
+    }
+    .resumen-item-nombre {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-bottom: 4px;
+    }
+    .resumen-item-detalle { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 5px; }
+    .ri-badge {
+      font-size: 0.67rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .ri-badge.sap   { background: rgba(248,113,113,0.15); color: var(--bad); }
+    .ri-badge.tut   { background: rgba(251,191,36,0.15);  color: var(--warn); }
+    .ri-badge.monto { background: rgba(124,156,255,0.15); color: var(--accent); }
+    .resumen-item-total {
+      font-size: 0.80rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--bad);
+      letter-spacing: -0.01em;
+    }
+    .resumen-item-total-label {
+      font-size: 0.68rem;
+      color: var(--muted);
+      margin-right: 3px;
+    }
+    .resumen-msg {
+      font-size: 0.80rem;
+      color: var(--muted);
+      text-align: center;
+      padding: 8px 0;
+    }
+    .resumen-msg.ok  { color: var(--ok); }
+    .resumen-msg.err { color: var(--bad); }
 
-        <div class="field">
-          <label for="tipo_pago">Tipo de pago</label>
-          <select id="tipo_pago" name="tipo_pago" required>
-            {% for option in payment_options %}
-              <option value="{{ option }}" {% if option == tipo_pago_value %}selected{% endif %}>{{ option }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </div>
+    @media (max-width: 860px) { .vp-shell { grid-template-columns: 1fr; } }
+  </style>
 
-      <div class="actions">
-        <button class="button" type="submit">Ejecutar validación</button>
-        <a class="button secondary" href="/">Volver al inicio</a>
-      </div>
-    </form>
+  <div class="vp-shell">
 
-    {% if error %}
-      <div class="alert error">{{ error }}</div>
-    {% endif %}
-  </section>
-
-  {% if result %}
-    <section class="panel">
-      <h2>Resultado</h2>
-      <p>
-        Fecha: <strong>{{ result.fecha }}</strong> |
-        Tipo: <strong>{{ result.tipo_pago }}</strong>
-      </p>
-
-      <div class="summary-grid">
-        <div class="summary-card">
-          <span>SAP</span>
-          <strong>{{ result.sap_total }}</strong>
-        </div>
-        <div class="summary-card">
-          <span>TUTATI</span>
-          <strong>{{ result.tutati_total }}</strong>
-        </div>
-        <div class="summary-card">
-          <span>Faltan en SAP</span>
-          <strong>{{ result.faltan_en_sap }}</strong>
-        </div>
-        <div class="summary-card">
-          <span>Faltan en TUTATI</span>
-          <strong>{{ result.faltan_en_tutati }}</strong>
-        </div>
-        <div class="summary-card">
-          <span>Montos diferentes</span>
-          <strong>{{ result.montos_diferentes }}</strong>
-        </div>
-        <div class="summary-card">
-          <span>Coinciden</span>
-          <strong>{{ result.coinciden }}</strong>
-        </div>
-      </div>
-
-      {% if result.rows %}
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                {% for col in result.cols %}
-                  <th>{{ col }}</th>
+    <div class="vp-main">
+      <section class="panel">
+        <form method="post" data-loading-text="Consultando SAP y TUTATI…">
+          <div class="form-grid">
+            <div class="field">
+              <label for="fecha">Fecha</label>
+              <input id="fecha" name="fecha" type="date" value="{{ fecha_value }}" required>
+            </div>
+            <div class="field">
+              <label for="tipo_pago">Tipo de pago</label>
+              <select id="tipo_pago" name="tipo_pago" required>
+                {% for option in payment_options %}
+                  <option value="{{ option }}" {% if option == tipo_pago_value %}selected{% endif %}>{{ option }}</option>
                 {% endfor %}
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in result.rows %}
-                <tr>
-                  <td>
-                    <span class="state-pill {% if row[0] == 'MONTO_DIFERENTE' %}warn{% else %}bad{% endif %}">
-                      {{ row[0] }}
-                    </span>
-                  </td>
-                  <td>{{ row[1] }}</td>
-                  <td>{{ "%.2f"|format(row[2]) }}</td>
-                  <td>{{ "%.2f"|format(row[3]) }}</td>
-                  <td>{{ "%.2f"|format(row[4]) }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% else %}
-        <div class="alert ok">No se detectaron diferencias para esa fecha y ese tipo de pago.</div>
+              </select>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="button" type="submit">Ejecutar validación</button>
+          </div>
+        </form>
+
+        {% if error %}
+          <div class="alert error">{{ error }}</div>
+        {% endif %}
+      </section>
+
+      {% if result %}
+        <section class="panel">
+          <span class="section-label">{{ result.fecha }} · {{ result.tipo_pago }}</span>
+          <div class="summary-grid">
+            <div class="summary-card">
+              <span>SAP</span>
+              <strong>{{ result.sap_total }}</strong>
+            </div>
+            <div class="summary-card">
+              <span>TUTATI</span>
+              <strong>{{ result.tutati_total }}</strong>
+            </div>
+            <div class="summary-card">
+              <span>Faltan SAP</span>
+              <strong>{{ result.faltan_en_sap }}</strong>
+            </div>
+            <div class="summary-card">
+              <span>Faltan TUTATI</span>
+              <strong>{{ result.faltan_en_tutati }}</strong>
+            </div>
+            <div class="summary-card">
+              <span>Dif. monto</span>
+              <strong>{{ result.montos_diferentes }}</strong>
+            </div>
+            <div class="summary-card">
+              <span>Coinciden</span>
+              <strong>{{ result.coinciden }}</strong>
+            </div>
+          </div>
+
+          {% if result.rows %}
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    {% for col in result.cols %}
+                      <th>{{ col }}</th>
+                    {% endfor %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in result.rows %}
+                    <tr>
+                      <td>
+                        <span class="state-pill {% if row[0] == 'MONTO_DIFERENTE' %}warn{% else %}bad{% endif %}">
+                          {{ row[0] }}
+                        </span>
+                      </td>
+                      <td>{{ row[1] }}</td>
+                      <td>{{ "%.2f"|format(row[2]) }}</td>
+                      <td>{{ "%.2f"|format(row[3]) }}</td>
+                      <td>{{ "%.2f"|format(row[4]) }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="alert ok">Sin diferencias detectadas.</div>
+          {% endif %}
+        </section>
       {% endif %}
-    </section>
-  {% endif %}
+    </div>
+
+    <!-- panel derecho: resumen del día -->
+    <aside class="resumen-panel">
+      <div class="resumen-header">
+        <span class="resumen-title">Resumen del día</span>
+        <button class="refresh-btn" id="resumen-refresh" title="Actualizar resumen">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5"/>
+            <path d="M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/>
+          </svg>
+        </button>
+      </div>
+      <span class="resumen-fecha-tag" id="resumen-fecha-tag">—</span>
+      <div class="resumen-items" id="resumen-items">
+        <span class="resumen-msg">Haz clic en ↻ para consultar</span>
+      </div>
+    </aside>
+
+  </div>
+
+  <script>
+    (function () {
+      var CACHE_PREFIX = "sap_pagos_resumen_";
+      var fechaInput   = document.getElementById("fecha");
+      var itemsDiv     = document.getElementById("resumen-items");
+      var fechaTag     = document.getElementById("resumen-fecha-tag");
+      var refreshBtn   = document.getElementById("resumen-refresh");
+
+      function cacheKey(fecha) { return CACHE_PREFIX + fecha; }
+
+      function loadCache(fecha) {
+        try { return JSON.parse(sessionStorage.getItem(cacheKey(fecha))); } catch (e) { return null; }
+      }
+
+      function saveCache(fecha, data) {
+        try { sessionStorage.setItem(cacheKey(fecha), JSON.stringify(data)); } catch (e) {}
+      }
+
+      function renderResumen(data) {
+        fechaTag.textContent = data.fecha || "—";
+        itemsDiv.innerHTML   = "";
+        var difs = data.diferencias || [];
+        if (difs.length === 0) {
+          var ok = document.createElement("span");
+          ok.className   = "resumen-msg ok";
+          ok.textContent = "Sin diferencias";
+          itemsDiv.appendChild(ok);
+          return;
+        }
+        difs.forEach(function (item) {
+          var card = document.createElement("div");
+          card.className = "resumen-item";
+
+          var nombre = document.createElement("span");
+          nombre.className   = "resumen-item-nombre";
+          nombre.title       = item.tipo;
+          nombre.textContent = item.tipo;
+          card.appendChild(nombre);
+
+          var detalle = document.createElement("div");
+          detalle.className = "resumen-item-detalle";
+          if (item.faltan_sap > 0) {
+            var b = document.createElement("span");
+            b.className   = "ri-badge sap";
+            b.textContent = "−SAP " + item.faltan_sap;
+            detalle.appendChild(b);
+          }
+          if (item.faltan_tutati > 0) {
+            var b2 = document.createElement("span");
+            b2.className   = "ri-badge tut";
+            b2.textContent = "−TUT " + item.faltan_tutati;
+            detalle.appendChild(b2);
+          }
+          if (item.dif_monto > 0) {
+            var b3 = document.createElement("span");
+            b3.className   = "ri-badge monto";
+            b3.textContent = "≠$ " + item.dif_monto;
+            detalle.appendChild(b3);
+          }
+          card.appendChild(detalle);
+
+          if (item.diff_total > 0) {
+            var totalLine = document.createElement("span");
+            totalLine.className = "resumen-item-total";
+            var lbl = document.createElement("span");
+            lbl.className   = "resumen-item-total-label";
+            lbl.textContent = "Total dif.";
+            totalLine.appendChild(lbl);
+            totalLine.appendChild(document.createTextNode(
+              item.diff_total.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            ));
+            card.appendChild(totalLine);
+          }
+
+          itemsDiv.appendChild(card);
+        });
+      }
+
+      function renderPendiente() {
+        fechaTag.textContent = fechaInput ? (fechaInput.value || "—") : "—";
+        itemsDiv.innerHTML   = '<span class="resumen-msg">Haz clic en ↻ para consultar</span>';
+      }
+
+      /* Restaurar desde cache al cargar la página */
+      var fechaInicial = fechaInput ? fechaInput.value : "";
+      if (fechaInicial) {
+        var cached = loadCache(fechaInicial);
+        if (cached) { renderResumen(cached); } else { renderPendiente(); }
+      }
+
+      /* Al cambiar la fecha: mostrar cache si existe, si no indicar pendiente */
+      if (fechaInput) {
+        fechaInput.addEventListener("change", function () {
+          var f = fechaInput.value;
+          if (!f) return;
+          var cached = loadCache(f);
+          if (cached) { renderResumen(cached); } else { renderPendiente(); }
+        });
+      }
+
+      /* Botón de refresh */
+      function setSpinning(on) {
+        refreshBtn.classList.toggle("spinning", on);
+        refreshBtn.disabled = on;
+      }
+
+      refreshBtn.addEventListener("click", function () {
+        var f = fechaInput ? fechaInput.value : "";
+        if (!f) return;
+        setSpinning(true);
+        itemsDiv.innerHTML = '<span class="resumen-msg">Consultando los ' + {{ payment_options|length }} + ' tipos…</span>';
+        fetch("/api/resumen-pagos?fecha=" + encodeURIComponent(f))
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            saveCache(f, data);
+            renderResumen(data);
+          })
+          .catch(function () {
+            itemsDiv.innerHTML = '<span class="resumen-msg err">Error al consultar</span>';
+          })
+          .finally(function () { setSpinning(false); });
+      });
+    })();
+  </script>
 {% endblock %}

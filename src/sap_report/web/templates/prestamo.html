@@ -1,22 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}Préstamo | SAP Web Local{% endblock %}
+{% block title %}Préstamo | SAP Web{% endblock %}
 
 {% block content %}
   <section class="panel">
-    <h2>Préstamo</h2>
-    <p>
-      Busca casos recientes con inventario negativo, cruza MySQL y SAP, y deja visibles solo las diferencias positivas.
-    </p>
-
-    <form method="post" data-loading-text="Buscando casos de préstamo y comparando stock entre MySQL y SAP.">
+    <form method="post" data-loading-text="Comparando stock MySQL vs SAP…">
       <div class="actions">
         <button class="button" type="submit">Consultar préstamo</button>
-        <a class="button secondary" href="/">Volver al inicio</a>
       </div>
     </form>
-
-    <p class="meta-text">Este flujo usa la misma lógica actual basada en los últimos 3 días.</p>
 
     {% if error %}
       <div class="alert error">{{ error }}</div>
@@ -25,7 +17,7 @@
 
   {% if rows is not none %}
     <section class="panel">
-      <h2>Resultado</h2>
+      <span class="section-label">Resultado</span>
       {% if rows %}
         <div class="table-wrap">
           <table>
@@ -47,9 +39,8 @@
             </tbody>
           </table>
         </div>
-        <p class="table-note">La tabla mantiene el mismo criterio del escritorio: solo muestra diferencias positivas.</p>
       {% else %}
-        <div class="alert ok">No se encontraron resultados para los U_BOT_KEY detectados.</div>
+        <div class="alert ok">Sin diferencias positivas detectadas.</div>
       {% endif %}
     </section>
   {% endif %}

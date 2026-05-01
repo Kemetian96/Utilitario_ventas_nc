@@ -1,34 +1,16 @@
 {% extends "base.html" %}
 
-{% block title %}Inicio | SAP Web Local{% endblock %}
+{% block title %}Inicio | SAP Web{% endblock %}
 
 {% block content %}
   <section class="panel">
-    <h2>Inicio</h2>
-    <p>Usa la barra lateral para abrir un módulo.</p>
-
+    <span class="section-label">Acceso rápido</span>
     <div class="button-row">
       <a class="button" href="/ejecutar-reporte">Ejecutar reporte</a>
-      <a class="button secondary" href="/validar-pagos">Validar pagos</a>
-      <a class="button secondary" href="/probar-conexiones">Probar conexiones</a>
-    </div>
-  </section>
-
-  <section class="panel">
-    <h2>Estado</h2>
-    <div class="summary-grid">
-      <div class="summary-card">
-        <span>Módulos</span>
-        <strong class="number">7</strong>
-      </div>
-      <div class="summary-card">
-        <span>Interfaz</span>
-        <strong>Oscura</strong>
-      </div>
-      <div class="summary-card">
-        <span>Navegación</span>
-        <strong>Lateral</strong>
-      </div>
+      <a class="button ghost" href="/validar-pagos">Validar pagos</a>
+      <a class="button ghost" href="/validar-igv">Validar IGV</a>
+      <a class="button ghost" href="/validar-articulos">Validar artículos</a>
+      <a class="button ghost" href="/prestamo">Préstamo</a>
     </div>
   </section>
 {% endblock %}

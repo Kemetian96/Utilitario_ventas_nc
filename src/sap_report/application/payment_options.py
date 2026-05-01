@@ -1,8 +1,5 @@
 PAYMENT_ACCOUNT_OPTIONS = [
     "Caja Tda",
-    "Cuentas por pagar - saldo",
-    "Puntos y obsequios otorgados",
-    "IGV - Retiro de bienes",
     "Tarjetas Visanet",
     "Tarjetas Mercadopago",
     "Tarjetas MCM",

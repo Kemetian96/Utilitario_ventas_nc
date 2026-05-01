@@ -1,18 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Revisar Hilos | SAP Web Local{% endblock %}
+{% block title %}Hilos | SAP Web{% endblock %}
 
 {% block content %}
   <section class="panel">
-    <h2>Revisar Hilos</h2>
-    <p>
-      Consulta la tabla auxiliar de hilos pendientes en SAP y la muestra como una tabla compacta.
-    </p>
-
     <form method="post">
       <div class="actions">
         <button class="button" type="submit">Consultar hilos</button>
-        <a class="button secondary" href="/">Volver al inicio</a>
       </div>
     </form>
 
@@ -23,7 +17,7 @@
 
   {% if rows is not none %}
     <section class="panel">
-      <h2>Resultado</h2>
+      <span class="section-label">Resultado</span>
       {% if rows %}
         <div class="table-wrap">
           <table>
@@ -46,7 +40,7 @@
           </table>
         </div>
       {% else %}
-        <div class="alert ok">No se encontraron hilos pendientes.</div>
+        <div class="alert ok">Sin hilos pendientes.</div>
       {% endif %}
     </section>
   {% endif %}

@@ -1,61 +1,79 @@
+import os
+import shutil
+import subprocess
+import time
+import webbrowser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, abort, render_template, request, send_file, url_for
+from flask import Flask, abort, jsonify, render_template, request, send_file, url_for
 
 from sap_report.application import PAYMENT_ACCOUNT_OPTIONS
 from sap_report.bootstrap import build_service
+
+
+_RESUMEN_CACHE: dict[str, tuple[float, list]] = {}
+_RESUMEN_TTL = 600  # segundos
 
 
 MODULES = [
     {
         "page": "home",
         "title": "Panel principal",
-        "subtitle": "Selecciona un módulo en la barra lateral.",
+        "subtitle": "Selecciona un módulo.",
         "url": "/",
+        "sidebar": False,
     },
     {
         "page": "probar-conexiones",
         "title": "Probar conexiones",
         "subtitle": "Verifica SAP, PostgreSQL y MySQL.",
         "url": "/probar-conexiones",
+        "sidebar": False,
     },
     {
         "page": "ejecutar-reporte",
         "title": "Ejecutar reporte",
-        "subtitle": "Genera SAP, TUTATI y comparación.",
+        "subtitle": "SAP, TUTATI y comparación.",
         "url": "/ejecutar-reporte",
+        "sidebar": True,
     },
     {
         "page": "validar-articulos",
         "title": "Validar artículos",
         "subtitle": "Patch ETL y URLs de validación.",
         "url": "/validar-articulos",
+        "sidebar": True,
     },
     {
         "page": "validar-igv",
         "title": "Validar IGV",
         "subtitle": "Cruces y acciones operativas.",
         "url": "/validar-igv",
+        "sidebar": True,
     },
     {
         "page": "revisar-hilos",
         "title": "Revisar hilos",
         "subtitle": "Consulta rápida de pendientes.",
         "url": "/revisar-hilos",
+        "sidebar": False,
     },
     {
         "page": "prestamo",
         "title": "Préstamo",
         "subtitle": "Diferencias de stock recientes.",
         "url": "/prestamo",
+        "sidebar": True,
     },
     {
         "page": "validar-pagos",
         "title": "Validar pagos",
         "subtitle": "Comparación SAP vs TUTATI.",
         "url": "/validar-pagos",
+        "sidebar": True,
     },
 ]
 
@@ -82,6 +100,86 @@ def create_app() -> Flask:
             "index.html",
             current_page="home",
         )
+
+    @app.get("/api/conexiones")
+    def api_conexiones():
+        try:
+            result = service.probar_conexiones()
+            return jsonify(result)
+        except Exception as exc:
+            msg = str(exc)
+            return jsonify({"sap": msg, "postgres": msg, "mysql": msg}), 200
+
+    @app.get("/api/hilos")
+    def api_hilos():
+        try:
+            rows, _ = service.revisar_hilos()
+            safe_rows = [[str(r[0]), r[1]] for r in (rows or [])]
+            return jsonify({"count": len(safe_rows), "rows": safe_rows})
+        except Exception as exc:
+            return jsonify({"count": -1, "rows": [], "error": str(exc)}), 200
+
+    @app.get("/api/resumen-pagos")
+    def api_resumen_pagos():
+        fecha_raw = request.args.get("fecha", "").strip()
+        if not fecha_raw:
+            return jsonify({"error": "Falta el parámetro fecha"}), 400
+        try:
+            fecha = _parse_date(fecha_raw)
+        except Exception:
+            return jsonify({"error": "Fecha inválida"}), 400
+
+        fecha_key = fecha.isoformat()
+        cached = _RESUMEN_CACHE.get(fecha_key)
+        if cached:
+            ts, diferencias = cached
+            if time.time() - ts < _RESUMEN_TTL:
+                return jsonify({"fecha": fecha_key, "diferencias": diferencias})
+
+        def _consultar(tipo: str):
+            try:
+                r = service.validar_pagos(fecha=fecha, account_name=tipo)
+                if r["faltan_en_sap"] > 0 or r["faltan_en_tutati"] > 0 or r["montos_diferentes"] > 0:
+                    diff_total = round(sum(abs(row[4]) for row in r.get("rows", [])), 2)
+                    return {
+                        "tipo": tipo,
+                        "faltan_sap": r["faltan_en_sap"],
+                        "faltan_tutati": r["faltan_en_tutati"],
+                        "dif_monto": r["montos_diferentes"],
+                        "diff_total": diff_total,
+                    }
+            except Exception:
+                pass
+            return None
+
+        resultados: dict[str, dict] = {}
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = {pool.submit(_consultar, tipo): tipo for tipo in PAYMENT_ACCOUNT_OPTIONS}
+            for future in as_completed(futures):
+                item = future.result()
+                if item:
+                    resultados[item["tipo"]] = item
+
+        diferencias = [resultados[t] for t in PAYMENT_ACCOUNT_OPTIONS if t in resultados]
+        _RESUMEN_CACHE[fecha_key] = (time.time(), diferencias)
+        return jsonify({"fecha": fecha_key, "diferencias": diferencias})
+
+    @app.post("/api/lanzar-articulos")
+    def api_lanzar_articulos():
+        data = request.get_json(silent=True) or {}
+        urls = [u for u in data.get("urls", []) if isinstance(u, str) and u.startswith("http")]
+        if not urls:
+            return jsonify({"ok": False, "error": "Sin URLs válidas"}), 400
+        browser_cmd = _find_browser_cmd()
+        if browser_cmd:
+            subprocess.Popen([browser_cmd, "--guest", "--new-window", urls[0]])
+            for url in urls[1:]:
+                subprocess.Popen([browser_cmd, "--guest", "--new-tab", url])
+            return jsonify({"ok": True})
+        webbrowser.open_new(urls[0])
+        for url in urls[1:]:
+            webbrowser.open_new_tab(url)
+        return jsonify({"ok": True, "fallback": True})
 
     @app.route("/probar-conexiones", methods=["GET", "POST"])
     def probar_conexiones() -> str:
@@ -291,3 +389,22 @@ def _get_current_module(current_page: str) -> dict[str, str]:
         if module["page"] == current_page:
             return module
     return MODULES[0]
+
+
+def _find_browser_cmd() -> str | None:
+    candidates = [shutil.which("chrome"), shutil.which("chrome.exe"), shutil.which("brave"), shutil.which("brave.exe")]
+    for cand in candidates:
+        if cand:
+            return cand
+    pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+    pf86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    paths = [
+        os.path.join(pf, "Google", "Chrome", "Application", "chrome.exe"),
+        os.path.join(pf86, "Google", "Chrome", "Application", "chrome.exe"),
+        os.path.join(pf, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+        os.path.join(pf86, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+    ]
+    for path in paths:
+        if os.path.exists(path):
+            return path
+    return None

@@ -1,22 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}Validar Artículos | SAP Web Local{% endblock %}
+{% block title %}Validar Artículos | SAP Web{% endblock %}
 
 {% block content %}
   <section class="panel">
-    <h2>Validar Artículos</h2>
-    <p>
-      Ejecuta primero el patch ETL para ayer y anteayer, luego consulta SAP y devuelve las URLs de validación.
-    </p>
-
-    <form method="post" data-loading-text="Ejecutando patch ETL y buscando URLs de validación.">
+    <form method="post" data-loading-text="Ejecutando patch ETL y buscando URLs…">
       <div class="actions">
         <button class="button" type="submit">Ejecutar validación</button>
-        <a class="button secondary" href="/">Volver al inicio</a>
       </div>
     </form>
-
-    <p class="meta-text">En la versión web no abrimos pestañas automáticamente: te dejamos la lista lista para abrir.</p>
 
     {% if error %}
       <div class="alert error">{{ error }}</div>
@@ -25,17 +17,56 @@
 
   {% if urls is not none %}
     <section class="panel">
-      <h2>Resultado</h2>
+      <span class="section-label">Resultado</span>
       {% if urls %}
-        <div class="alert ok">Se detectaron {{ urls|length }} URLs para revisar.</div>
-        <div class="links-list">
+        <div class="alert ok">{{ urls|length }} URL{{ 's' if urls|length != 1 }} para revisar.</div>
+        <div class="links-list" id="urls-list">
           {% for url in urls %}
             <a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ url }}</a>
           {% endfor %}
         </div>
+        <div class="button-row" style="margin-top:14px; align-items:center;">
+          <button class="button ghost" id="launch-btn" onclick="launchGuest(this)">Lanzar en navegador invitado</button>
+          <span id="launch-status" style="font-size:0.82rem; color:var(--muted);"></span>
+        </div>
       {% else %}
-        <div class="alert ok">No se detectaron URLs para ese proceso.</div>
+        <div class="alert ok">Sin URLs detectadas.</div>
       {% endif %}
     </section>
   {% endif %}
+
+  <script>
+    function launchGuest(btn) {
+      var links = document.querySelectorAll("#urls-list a");
+      var urls  = Array.from(links).map(function (a) { return a.href; });
+      if (!urls.length) return;
+      btn.disabled    = true;
+      btn.textContent = "Lanzando…";
+      var status = document.getElementById("launch-status");
+      status.textContent = "";
+      fetch("/api/lanzar-articulos", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ urls: urls }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          btn.disabled    = false;
+          btn.textContent = "Lanzar en navegador invitado";
+          if (data.ok) {
+            status.textContent = "Abierto" + (urls.length > 1 ? "s " + urls.length + " URLs" : "") + " en Chrome invitado" + (data.fallback ? " (sin --guest)" : "");
+            status.style.color = "var(--ok)";
+          } else {
+            status.textContent = "Error: " + (data.error || "desconocido");
+            status.style.color = "var(--bad)";
+          }
+        })
+        .catch(function () {
+          btn.disabled       = false;
+          btn.textContent    = "Lanzar en navegador invitado";
+          status.textContent = "Error al contactar el servidor";
+          status.style.color = "var(--bad)";
+        });
+    }
+  </script>
 {% endblock %}

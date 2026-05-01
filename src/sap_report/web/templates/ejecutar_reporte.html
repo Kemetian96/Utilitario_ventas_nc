@@ -1,15 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}Ejecutar Reporte | SAP Web Local{% endblock %}
+{% block title %}Ejecutar Reporte | SAP Web{% endblock %}
 
 {% block content %}
   <section class="panel">
-    <h2>Ejecutar Reporte</h2>
-    <p>
-      Ejecuta las consultas principales por rango de fechas, genera `SAP.xlsx`, `TUTATI.xlsx` y `COMPARACION.xlsx`.
-    </p>
-
-    <form method="post" data-loading-text="Ejecutando reporte y generando archivos Excel. Este proceso puede tardar.">
+    <form method="post" data-loading-text="Generando archivos Excel. Esto puede tardar.">
       <div class="form-grid">
         <div class="field">
           <label for="fecha_inicio">Fecha inicio</label>
@@ -23,11 +18,8 @@
 
       <div class="actions">
         <button class="button" type="submit">Ejecutar reporte</button>
-        <a class="button secondary" href="/">Volver al inicio</a>
       </div>
     </form>
-
-    <p class="meta-text">Este proceso puede tardar porque ejecuta lotes diarios y genera archivos Excel.</p>
 
     {% if error %}
       <div class="alert error">{{ error }}</div>
@@ -36,36 +28,36 @@
 
   {% if result %}
     <section class="panel">
-      <h2>Resultado</h2>
+      <span class="section-label">Resultado</span>
       <div class="summary-grid">
         <div class="summary-card">
           <span>Filas SAP</span>
-          <strong class="number">{{ result.sap }}</strong>
+          <strong>{{ result.sap }}</strong>
         </div>
         <div class="summary-card">
           <span>Filas TUTATI</span>
-          <strong class="number">{{ result.postgres }}</strong>
+          <strong>{{ result.postgres }}</strong>
         </div>
       </div>
 
-      <div class="links-list">
+      <div style="margin-top: 12px; display: grid; gap: 6px;">
         <div class="alert {% if result.sap_error %}error{% else %}ok{% endif %}">
-          SAP: {{ result.sap_error or 'OK' }}
+          SAP — {{ result.sap_error or 'OK' }}
         </div>
         <div class="alert {% if result.postgres_error %}error{% else %}ok{% endif %}">
-          PostgreSQL: {{ result.postgres_error or 'OK' }}
+          PostgreSQL — {{ result.postgres_error or 'OK' }}
         </div>
         <div class="alert {% if result.comparacion_error %}error{% else %}ok{% endif %}">
-          Comparación: {{ result.comparacion_error or 'OK' }}
+          Comparación — {{ result.comparacion_error or 'OK' }}
         </div>
         <div class="alert {% if result.comparacion_nc_error %}error{% else %}ok{% endif %}">
-          Comparación NC: {{ result.comparacion_nc_error or 'OK' }}
+          Comparación NC — {{ result.comparacion_nc_error or 'OK' }}
         </div>
       </div>
 
       <div class="button-row">
         {% for item in downloads %}
-          <a class="button secondary" href="{{ item.url }}">{{ item.label }}</a>
+          <a class="button ghost" href="{{ item.url }}" download>{{ item.label }}</a>
         {% endfor %}
       </div>
     </section>
