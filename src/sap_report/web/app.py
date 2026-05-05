@@ -129,12 +129,14 @@ def create_app() -> Flask:
         except Exception:
             return jsonify({"error": "Fecha inválida"}), 400
 
+        force = request.args.get("force", "0") == "1"
         fecha_key = fecha.isoformat()
-        cached = _RESUMEN_CACHE.get(fecha_key)
-        if cached:
-            ts, diferencias = cached
-            if time.time() - ts < _RESUMEN_TTL:
-                return jsonify({"fecha": fecha_key, "diferencias": diferencias})
+        if not force:
+            cached = _RESUMEN_CACHE.get(fecha_key)
+            if cached:
+                ts, diferencias = cached
+                if time.time() - ts < _RESUMEN_TTL:
+                    return jsonify({"fecha": fecha_key, "diferencias": diferencias})
 
         def _consultar(tipo: str):
             try:

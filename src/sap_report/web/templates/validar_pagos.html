@@ -310,8 +310,9 @@
         var f = fechaInput ? fechaInput.value : "";
         if (!f) return;
         setSpinning(true);
+        try { sessionStorage.removeItem(cacheKey(f)); } catch (e) {}
         itemsDiv.innerHTML = '<span class="resumen-msg">Consultando los ' + {{ payment_options|length }} + ' tipos…</span>';
-        fetch("/api/resumen-pagos?fecha=" + encodeURIComponent(f))
+        fetch("/api/resumen-pagos?fecha=" + encodeURIComponent(f) + "&force=1")
           .then(function (r) { return r.json(); })
           .then(function (data) {
             saveCache(f, data);
