@@ -42,6 +42,7 @@ MYSQL_VALIDAR_IGV_ITEMS_PATH = Path(__file__).resolve().parent / "queries" / "va
 MYSQL_VALIDAR_IGV_PEND_ORDERS_PATH = Path(__file__).resolve().parent / "queries" / "validar_igv_mysql_pendientes_orders.sql"
 MYSQL_VALIDAR_IGV_PEND_RMAS_PATH = Path(__file__).resolve().parent / "queries" / "validar_igv_mysql_pendientes_rmas.sql"
 MYSQL_VALIDAR_PAGOS_PATH = Path(__file__).resolve().parent / "queries" / "Validar_pagos_tutati.sql"
+MYSQL_POR_ENVIAR_PATH = Path(__file__).resolve().parent / "queries" / "PorEnviar.sql"
 
 
 class SapHanaRepository:
@@ -514,6 +515,7 @@ class MySQLRepository:
         self._query_validar_igv_pend_orders = MYSQL_VALIDAR_IGV_PEND_ORDERS_PATH.read_text(encoding="utf-8")
         self._query_validar_igv_pend_rmas = MYSQL_VALIDAR_IGV_PEND_RMAS_PATH.read_text(encoding="utf-8")
         self._query_validar_pagos = MYSQL_VALIDAR_PAGOS_PATH.read_text(encoding="utf-8")
+        self._query_por_enviar = MYSQL_POR_ENVIAR_PATH.read_text(encoding="utf-8")
 
     def probar_conexion(self) -> None:
         # Conexion corta para validar acceso a MySQL.
@@ -667,6 +669,35 @@ class MySQLRepository:
             .replace("{{cuid_inicio}}", str(cuid_inicio))
             .replace("{{cuid_fin}}", str(cuid_fin))
             .replace("{{account_name}}", account_name_safe)
+        )
+        return self.ejecutar_sql(sql)
+
+    _FILTROS_POR_ENVIAR = {
+        "anuladas": "j.id_outbounds_statuses < 0",
+        "pendientes": (
+            "t1.id_documents_movements_types NOT IN (13,14,15)"
+            " AND t1.id_documents_movements_statuses IN (1,2,3,4)"
+        ),
+        "ventas_nc": (
+            "t1.id_documents_movements_types IN (9,10)"
+            " AND t1.id_documents_movements_statuses IN (1,2,3,4)"
+        ),
+    }
+
+    def ejecutar_por_enviar(
+        self,
+        cuid_inicio: int,
+        cuid_fin: int,
+        tipo: str,
+    ) -> tuple[list[tuple[Any, ...]], list[str]]:
+        filtro = self._FILTROS_POR_ENVIAR.get(tipo)
+        if filtro is None:
+            raise ValueError(f"Tipo invalido para por_enviar: {tipo!r}")
+        sql = (
+            self._query_por_enviar
+            .replace("{{cuid_inicio}}", str(cuid_inicio))
+            .replace("{{cuid_fin}}", str(cuid_fin))
+            .replace("{{filtro_adicional}}", filtro)
         )
         return self.ejecutar_sql(sql)
 

@@ -75,6 +75,13 @@ MODULES = [
         "url": "/validar-pagos",
         "sidebar": True,
     },
+    {
+        "page": "por-enviar",
+        "title": "Por Enviar",
+        "subtitle": "Anuladas, pendientes y ventas.",
+        "url": "/por-enviar",
+        "sidebar": True,
+    },
 ]
 
 
@@ -326,6 +333,39 @@ def create_app() -> Flask:
             tipo_pago_value=tipo_pago_value,
             payment_options=PAYMENT_ACCOUNT_OPTIONS,
             result=result,
+            error=error,
+        )
+
+    @app.route("/por-enviar", methods=["GET", "POST"])
+    def por_enviar() -> str:
+        fecha_inicio_value = settings.fecha_inicio_default[:10]
+        fecha_fin_value = settings.fecha_fin_default[:10]
+        tipo_value = "pendientes"
+        rows: list[tuple[Any, ...]] | None = None
+        cols: list[str] | None = None
+        error: str | None = None
+
+        if request.method == "POST":
+            fecha_inicio_value = request.form.get("fecha_inicio", fecha_inicio_value).strip()
+            fecha_fin_value = request.form.get("fecha_fin", fecha_fin_value).strip()
+            tipo_value = request.form.get("tipo", tipo_value).strip()
+            try:
+                rows, cols = service.consultar_por_enviar(
+                    fecha_inicio=_parse_date(fecha_inicio_value),
+                    fecha_fin=_parse_date(fecha_fin_value),
+                    tipo=tipo_value,
+                )
+            except Exception as exc:
+                error = str(exc)
+
+        return render_template(
+            "por_enviar.html",
+            current_page="por-enviar",
+            fecha_inicio_value=fecha_inicio_value,
+            fecha_fin_value=fecha_fin_value,
+            tipo_value=tipo_value,
+            rows=rows,
+            cols=cols,
             error=error,
         )
 

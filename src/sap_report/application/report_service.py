@@ -444,6 +444,16 @@ class ReportService:
         # Consulta de hilos pendientes en SAP.
         return self._sap_repository.ejecutar_revisar_hilos()
 
+    def consultar_por_enviar(
+        self,
+        fecha_inicio: date,
+        fecha_fin: date,
+        tipo: str,
+    ) -> tuple[list[tuple[Any, ...]], list[str]]:
+        cuid_inicio = fecha_a_cuid(datetime.combine(fecha_inicio, datetime_time.min))
+        cuid_fin = fecha_a_cuid(datetime.combine(fecha_fin, datetime_time(23, 59, 59)))
+        return self._mysql_repository.ejecutar_por_enviar(cuid_inicio, cuid_fin, tipo)
+
     def validar_pagos(
         self,
         fecha: date,

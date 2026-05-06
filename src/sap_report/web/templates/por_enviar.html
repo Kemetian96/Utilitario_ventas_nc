@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Por Enviar | SAP Web{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <form method="post" data-loading-text="Consultando MySQL…">
+      <div class="form-grid">
+        <div class="field">
+          <label for="fecha_inicio">Fecha inicio</label>
+          <input id="fecha_inicio" name="fecha_inicio" type="date" value="{{ fecha_inicio_value }}" required>
+        </div>
+        <div class="field">
+          <label for="fecha_fin">Fecha fin</label>
+          <input id="fecha_fin" name="fecha_fin" type="date" value="{{ fecha_fin_value }}" required>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="button {{ '' if tipo_value == 'anuladas' and rows is not none else 'ghost' }}"
+                type="submit" name="tipo" value="anuladas">Anuladas</button>
+        <button class="button {{ '' if tipo_value == 'pendientes' and rows is not none else 'ghost' }}"
+                type="submit" name="tipo" value="pendientes">Pendientes</button>
+        <button class="button {{ '' if tipo_value == 'ventas_nc' and rows is not none else 'ghost' }}"
+                type="submit" name="tipo" value="ventas_nc">Ventas y Nc</button>
+      </div>
+    </form>
+
+    {% if error %}
+      <div class="alert error">{{ error }}</div>
+    {% endif %}
+  </section>
+
+  {% if rows is not none %}
+    <section class="panel">
+      <span class="section-label">
+        {% if tipo_value == 'anuladas' %}Anuladas
+        {% elif tipo_value == 'pendientes' %}Pendientes
+        {% else %}Ventas y Nc
+        {% endif %}
+        · {{ fecha_inicio_value }} → {{ fecha_fin_value }}
+        · {{ rows | length }} registro{{ 's' if rows | length != 1 else '' }}
+      </span>
+
+      {% if rows %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {% for col in cols %}
+                  <th>{{ col }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+                <tr>
+                  {% for value in row %}
+                    <td>{{ value if value is not none else '—' }}</td>
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="alert ok">Sin registros para los filtros seleccionados.</div>
+      {% endif %}
+    </section>
+  {% endif %}
+{% endblock %}
