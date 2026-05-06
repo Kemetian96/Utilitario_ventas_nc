@@ -361,6 +361,12 @@ def create_app() -> Flask:
                         success = f"Movimiento {id_movement_raw} actualizado a estado 9."
                     else:
                         error = f"No se actualizo el movimiento {id_movement_raw}."
+                elif accion == "enviar":
+                    id_movement_raw = request.form.get("id_movement", "").strip()
+                    if not id_movement_raw.isdigit():
+                        raise ValueError("Id_movement invalido.")
+                    service.enviar_movimiento_por_enviar(int(id_movement_raw))
+                    success = f"Movimiento {id_movement_raw} enviado correctamente."
                 rows, cols = service.consultar_por_enviar(
                     fecha_inicio=_parse_date(fecha_inicio_value),
                     fecha_fin=_parse_date(fecha_fin_value),

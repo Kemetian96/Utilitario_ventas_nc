@@ -75,9 +75,7 @@
                 {% for col in cols %}
                   <th class="{{ 'response-col' if col | lower == 'response' else '' }}">{{ col }}</th>
                 {% endfor %}
-                {% if tipo_value == 'anuladas' %}
-                  <th>Accion</th>
-                {% endif %}
+                <th>Accion</th>
               </tr>
             </thead>
             <tbody>
@@ -101,6 +99,21 @@
                         </form>
                       {% else %}
                         <span class="section-label" style="margin-bottom: 0;">Anulado</span>
+                      {% endif %}
+                    </td>
+                  {% elif tipo_value in ('pendientes', 'ventas_nc') %}
+                    <td>
+                      {% if row[3] | string != '5' %}
+                        <form method="post" data-loading-text="Enviando movimiento...">
+                          <input type="hidden" name="accion" value="enviar">
+                          <input type="hidden" name="id_movement" value="{{ row[0] }}">
+                          <input type="hidden" name="fecha_inicio" value="{{ fecha_inicio_value }}">
+                          <input type="hidden" name="fecha_fin" value="{{ fecha_fin_value }}">
+                          <input type="hidden" name="tipo" value="{{ tipo_value }}">
+                          <button class="button ghost inline-small" type="submit">Enviar</button>
+                        </form>
+                      {% else %}
+                        <span class="section-label" style="margin-bottom: 0;">Enviado</span>
                       {% endif %}
                     </td>
                   {% endif %}
