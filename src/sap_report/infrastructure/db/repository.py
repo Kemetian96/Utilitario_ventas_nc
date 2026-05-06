@@ -43,6 +43,7 @@ MYSQL_VALIDAR_IGV_PEND_ORDERS_PATH = Path(__file__).resolve().parent / "queries"
 MYSQL_VALIDAR_IGV_PEND_RMAS_PATH = Path(__file__).resolve().parent / "queries" / "validar_igv_mysql_pendientes_rmas.sql"
 MYSQL_VALIDAR_PAGOS_PATH = Path(__file__).resolve().parent / "queries" / "Validar_pagos_tutati.sql"
 MYSQL_POR_ENVIAR_PATH = Path(__file__).resolve().parent / "queries" / "PorEnviar.sql"
+MYSQL_ANULAR_MOVIMIENTO_PATH = Path(__file__).resolve().parent / "queries" / "anular_movimiento_por_enviar.sql"
 
 
 class SapHanaRepository:
@@ -516,6 +517,7 @@ class MySQLRepository:
         self._query_validar_igv_pend_rmas = MYSQL_VALIDAR_IGV_PEND_RMAS_PATH.read_text(encoding="utf-8")
         self._query_validar_pagos = MYSQL_VALIDAR_PAGOS_PATH.read_text(encoding="utf-8")
         self._query_por_enviar = MYSQL_POR_ENVIAR_PATH.read_text(encoding="utf-8")
+        self._query_anular_movimiento = MYSQL_ANULAR_MOVIMIENTO_PATH.read_text(encoding="utf-8")
 
     def probar_conexion(self) -> None:
         # Conexion corta para validar acceso a MySQL.
@@ -700,6 +702,40 @@ class MySQLRepository:
             .replace("{{filtro_adicional}}", filtro)
         )
         return self.ejecutar_sql(sql)
+
+    def anular_movimiento_por_enviar(self, id_movement: int) -> int:
+        # Marca el movimiento como anulado (estado 9) en MySQL.
+        for intento in range(1, self._settings.reintentos + 1):
+            conn = None
+            try:
+                conn = pymysql.connect(
+                    host=self._mysql_host,
+                    user=self._mysql_user,
+                    password=self._mysql_password,
+                    database=self._mysql_name,
+                    port=self._mysql_port,
+                    connect_timeout=self._mysql_connect_timeout,
+                    autocommit=True,
+                )
+                with conn.cursor() as cur:
+                    cur.execute(self._query_anular_movimiento, (id_movement,))
+                    return cur.rowcount if cur.rowcount is not None else 0
+            except pymysql.MySQLError as exc:
+                LOGGER.warning(
+                    "Actualizar estado por_enviar fallo (intento %s/%s) id_movement %s: %s",
+                    intento,
+                    self._settings.reintentos,
+                    id_movement,
+                    exc,
+                )
+                if intento == self._settings.reintentos:
+                    raise
+                time.sleep(self._settings.espera_segundos)
+            finally:
+                if conn:
+                    conn.close()
+
+        raise RuntimeError("No se pudo actualizar el movimiento en MySQL tras todos los reintentos.")
 
 
 def _render_in_list(values: list[str]) -> str:

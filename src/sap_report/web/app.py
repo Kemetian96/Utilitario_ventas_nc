@@ -343,6 +343,7 @@ def create_app() -> Flask:
         tipo_value = "pendientes"
         rows: list[tuple[Any, ...]] | None = None
         cols: list[str] | None = None
+        success: str | None = None
         error: str | None = None
 
         if request.method == "POST":
@@ -350,6 +351,16 @@ def create_app() -> Flask:
             fecha_fin_value = request.form.get("fecha_fin", fecha_fin_value).strip()
             tipo_value = request.form.get("tipo", tipo_value).strip()
             try:
+                accion = request.form.get("accion", "consultar").strip()
+                if accion == "anular":
+                    id_movement_raw = request.form.get("id_movement", "").strip()
+                    if not id_movement_raw.isdigit():
+                        raise ValueError("Id_movement invalido.")
+                    updated = service.anular_movimiento_por_enviar(int(id_movement_raw))
+                    if updated > 0:
+                        success = f"Movimiento {id_movement_raw} actualizado a estado 9."
+                    else:
+                        error = f"No se actualizo el movimiento {id_movement_raw}."
                 rows, cols = service.consultar_por_enviar(
                     fecha_inicio=_parse_date(fecha_inicio_value),
                     fecha_fin=_parse_date(fecha_fin_value),
@@ -366,6 +377,7 @@ def create_app() -> Flask:
             tipo_value=tipo_value,
             rows=rows,
             cols=cols,
+            success=success,
             error=error,
         )
 

@@ -454,6 +454,12 @@ class ReportService:
         cuid_fin = fecha_a_cuid(datetime.combine(fecha_fin, datetime_time(23, 59, 59)))
         return self._mysql_repository.ejecutar_por_enviar(cuid_inicio, cuid_fin, tipo)
 
+    def anular_movimiento_por_enviar(self, id_movement: int) -> int:
+        # Actualiza el movimiento a estado 9 para reflejar anulacion manual.
+        if id_movement <= 0:
+            raise ValueError("Id_movement invalido.")
+        return self._mysql_repository.anular_movimiento_por_enviar(id_movement)
+
     def validar_pagos(
         self,
         fecha: date,

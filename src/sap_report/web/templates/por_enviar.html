@@ -3,8 +3,29 @@
 {% block title %}Por Enviar | SAP Web{% endblock %}
 
 {% block content %}
+  <style>
+    .content {
+      max-width: 1380px;
+    }
+
+    .button.inline-small {
+      padding: 4px 10px;
+      font-size: 0.75rem;
+      min-height: 28px;
+    }
+
+    .por-enviar-table .response-col,
+    .por-enviar-table .response-cell {
+      min-width: 320px;
+      max-width: 520px;
+      white-space: normal;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+  </style>
+
   <section class="panel">
-    <form method="post" data-loading-text="Consultando MySQL…">
+    <form method="post" data-loading-text="Consultando MySQL...">
       <div class="form-grid">
         <div class="field">
           <label for="fecha_inicio">Fecha inicio</label>
@@ -26,6 +47,10 @@
       </div>
     </form>
 
+    {% if success %}
+      <div class="alert ok">{{ success }}</div>
+    {% endif %}
+
     {% if error %}
       <div class="alert error">{{ error }}</div>
     {% endif %}
@@ -38,26 +63,47 @@
         {% elif tipo_value == 'pendientes' %}Pendientes
         {% else %}Ventas y Nc
         {% endif %}
-        · {{ fecha_inicio_value }} → {{ fecha_fin_value }}
-        · {{ rows | length }} registro{{ 's' if rows | length != 1 else '' }}
+        | {{ fecha_inicio_value }} -> {{ fecha_fin_value }}
+        | {{ rows | length }} registro{{ 's' if rows | length != 1 else '' }}
       </span>
 
       {% if rows %}
         <div class="table-wrap">
-          <table>
+          <table class="por-enviar-table">
             <thead>
               <tr>
                 {% for col in cols %}
-                  <th>{{ col }}</th>
+                  <th class="{{ 'response-col' if col | lower == 'response' else '' }}">{{ col }}</th>
                 {% endfor %}
+                {% if tipo_value == 'anuladas' %}
+                  <th>Accion</th>
+                {% endif %}
               </tr>
             </thead>
             <tbody>
               {% for row in rows %}
                 <tr>
                   {% for value in row %}
-                    <td>{{ value if value is not none else '—' }}</td>
+                    <td class="{{ 'response-cell' if cols[loop.index0] | lower == 'response' else '' }}">
+                      {{ value if value is not none else '-' }}
+                    </td>
                   {% endfor %}
+                  {% if tipo_value == 'anuladas' %}
+                    <td>
+                      {% if row[3] | string != '9' %}
+                        <form method="post" data-loading-text="Actualizando movimiento...">
+                          <input type="hidden" name="accion" value="anular">
+                          <input type="hidden" name="id_movement" value="{{ row[0] }}">
+                          <input type="hidden" name="fecha_inicio" value="{{ fecha_inicio_value }}">
+                          <input type="hidden" name="fecha_fin" value="{{ fecha_fin_value }}">
+                          <input type="hidden" name="tipo" value="{{ tipo_value }}">
+                          <button class="button ghost inline-small" type="submit">Anular</button>
+                        </form>
+                      {% else %}
+                        <span class="section-label" style="margin-bottom: 0;">Anulado</span>
+                      {% endif %}
+                    </td>
+                  {% endif %}
                 </tr>
               {% endfor %}
             </tbody>
