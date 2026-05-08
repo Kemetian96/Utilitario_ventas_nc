@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block title %}Consultar pago SAP | SAP Web{% endblock %}
+
+{% block content %}
+  <style>
+    .content { max-width: 860px; }
+
+    .sociedad-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .sociedad-label {
+      font-size: 0.76rem;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .sociedad-btn {
+      font-size: 0.76rem;
+      padding: 4px 14px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--text);
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .sociedad-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .sociedad-btn:not(.active):hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .json-wrap {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      margin-top: 10px;
+    }
+    .json-wrap pre {
+      margin: 0;
+      font-size: 0.82rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: var(--text);
+    }
+    .toggle-json {
+      font-size: 0.76rem;
+      color: var(--accent);
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+      margin-top: 10px;
+      display: inline-block;
+    }
+    .toggle-json:hover { text-decoration: underline; }
+    .copy-btn {
+      float: right;
+      font-size: 0.72rem;
+      padding: 3px 10px;
+      margin-bottom: 8px;
+      cursor: pointer;
+    }
+    .monto-cell { font-variant-numeric: tabular-nums; font-weight: 600; }
+  </style>
+
+  <!-- Selector de sociedad -->
+  <div class="sociedad-bar">
+    <span class="sociedad-label">Sociedad:</span>
+    {% for key in sl_companies %}
+      <form method="post" style="display:inline">
+        <input type="hidden" name="accion" value="cambiar_sociedad">
+        <input type="hidden" name="sociedad" value="{{ key }}">
+        <button type="submit"
+                class="sociedad-btn {% if key == sociedad_key %}active{% endif %}">
+          {{ key }}
+        </button>
+      </form>
+    {% endfor %}
+  </div>
+
+  <section class="panel">
+    <form method="post" data-loading-text="Consultando SAP…">
+      <input type="hidden" name="accion" value="consultar">
+      <div class="form-grid">
+        <div class="field">
+          <label for="orden">Orden web (U_PLA_ORDENWEB)</label>
+          <input id="orden" name="orden" type="text" value="{{ orden_value }}"
+                 placeholder="Ej. FE58AX82GELL" autocomplete="off" required>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="button" type="submit">Consultar</button>
+      </div>
+    </form>
+
+    {% if success %}<div class="alert ok">{{ success }}</div>{% endif %}
+    {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  </section>
+
+  {% if pagos %}
+    <section class="panel">
+      <span class="section-label">Pagos encontrados · {{ orden_value }} · {{ pagos|length }} registro(s)</span>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>DocEntry</th>
+              <th>Nombre</th>
+              <th>Tipo</th>
+              <th>Fecha</th>
+              <th>Monto</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for pago in pagos %}
+              <tr>
+                <td>{{ pago.doc_entry }}</td>
+                <td>{{ pago.nombre_pago }}</td>
+                <td>{{ pago.tipo_pago }}</td>
+                <td>{{ pago.fecha }}</td>
+                <td class="monto-cell">{{ "%.2f"|format(pago.monto) }}</td>
+                <td>
+                  <form method="post" style="display:inline"
+                        onsubmit="return confirm('¿Confirmas anular el pago DocEntry {{ pago.doc_entry }}?')">
+                    <input type="hidden" name="accion" value="anular">
+                    <input type="hidden" name="orden" value="{{ orden_value }}">
+                    <input type="hidden" name="doc_entry" value="{{ pago.doc_entry }}">
+                    <button class="button danger inline-small" type="submit">Anular</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if result_json %}
+        <button class="toggle-json" id="toggle-json">▶ Ver JSON completo</button>
+        <div id="json-section" style="display:none">
+          <button class="button copy-btn" id="copy-btn" type="button">Copiar</button>
+          <div class="json-wrap">
+            <pre id="json-output">{{ result_json }}</pre>
+          </div>
+        </div>
+      {% endif %}
+    </section>
+  {% elif result_json %}
+    <section class="panel">
+      <span class="section-label">Sin pagos activos · {{ orden_value }}</span>
+      <div class="alert ok">No se encontraron pagos no cancelados para esta orden.</div>
+    </section>
+  {% endif %}
+
+  <script>
+    var toggle = document.getElementById("toggle-json");
+    var section = document.getElementById("json-section");
+    if (toggle && section) {
+      toggle.addEventListener("click", function () {
+        var visible = section.style.display !== "none";
+        section.style.display = visible ? "none" : "block";
+        toggle.textContent = visible ? "▶ Ver JSON completo" : "▼ Ocultar JSON";
+      });
+    }
+    var copyBtn = document.getElementById("copy-btn");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", function () {
+        var text = document.getElementById("json-output").textContent;
+        navigator.clipboard.writeText(text).then(function () {
+          copyBtn.textContent = "Copiado";
+          setTimeout(function () { copyBtn.textContent = "Copiar"; }, 1500);
+        });
+      });
+    }
+  </script>
+{% endblock %}

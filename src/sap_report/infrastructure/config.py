@@ -1,5 +1,5 @@
 import os
-from datetime import date
+from datetime import date, timedelta
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -177,6 +177,11 @@ class Settings:
     sap_output_path: Path
     pg_output_path: Path
     comparacion_output_path: Path
+    # SAP Service Layer
+    sl_url: str
+    sl_company_db: str
+    sl_user: str
+    sl_password: str
     # Parametros generales
     reintentos: int
     espera_segundos: int
@@ -217,10 +222,14 @@ def load_settings() -> Settings:
         sap_output_path=Path(_get_env("SAP_OUTPUT_PATH", str(Path("OUTPUT") / "SAP.xlsx"))),
         pg_output_path=Path(_get_env("PG_OUTPUT_PATH", str(Path("OUTPUT") / "TUTATI.xlsx"))),
         comparacion_output_path=Path(_get_env("COMPARACION_OUTPUT_PATH", str(Path("OUTPUT") / "COMPARACION.xlsx"))),
+        sl_url=_get_env("SL_URL", "https://54.210.79.151:50000/b1s/v1"),
+        sl_company_db=_get_env("SL_COMPANY_DB", "B1H_COMERCIALMONT_PROD"),
+        sl_user=_get_env("SL_USER", ""),
+        sl_password=_get_env("SL_PASSWORD", ""),
         reintentos=int(_get_env("REINTENTOS_CONEXION", "5")),
         espera_segundos=int(_get_env("ESPERA_REINTENTO_SEGUNDOS", "10")),
         ui_width=int(_get_env("UI_WIDTH", "360")),
         ui_height=int(_get_env("UI_HEIGHT", "260")),
-        fecha_inicio_default=_get_env("FECHA_INICIO", date.today().strftime("%Y-%m-%d")),
-        fecha_fin_default=_get_env("FECHA_FIN", date.today().strftime("%Y-%m-%d")),
+        fecha_inicio_default=_get_env("FECHA_INICIO", (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")),
+        fecha_fin_default=_get_env("FECHA_FIN", (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")),
     )

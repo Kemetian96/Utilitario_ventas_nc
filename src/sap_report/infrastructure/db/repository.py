@@ -33,6 +33,8 @@ SAP_VALIDAR_IGV_UPDATE_HILOS_PATH = Path(__file__).resolve().parent / "queries" 
 SAP_REVISAR_HILOS_PATH = Path(__file__).resolve().parent / "queries" / "revisar_hilos.sql"
 SAP_PRESTAMO_STOCK_PATH = Path(__file__).resolve().parent / "queries" / "prestamo_stock.sql"
 SAP_PRESTAMO_LOGPROCESO_PATH = Path(__file__).resolve().parent / "queries" / "prestamo_logproceso.sql"
+SAP_PRESTAMO_LOGPROCESO_DEV_PATH = Path(__file__).resolve().parent / "queries" / "prestamo_logproceso_dev.sql"
+SAP_PRESTAMO_TRANI_PATH = Path(__file__).resolve().parent / "queries" / "prestamo_trani.sql"
 SAP_VALIDACION_NC_PATH = Path(__file__).resolve().parent / "queries" / "ValidacionNC.sql"
 SAP_VALIDACION_NC_ARTICULOS_PATH = Path(__file__).resolve().parent / "queries" / "ValidacionNCArticulos.sql"
 SAP_VALIDAR_PAGOS_PATH = Path(__file__).resolve().parent / "queries" / "Validar_pagos_sap.sql"
@@ -65,6 +67,8 @@ class SapHanaRepository:
         self._query_revisar_hilos = SAP_REVISAR_HILOS_PATH.read_text(encoding="utf-8")
         self._query_prestamo_stock = SAP_PRESTAMO_STOCK_PATH.read_text(encoding="utf-8")
         self._query_prestamo_logproceso = SAP_PRESTAMO_LOGPROCESO_PATH.read_text(encoding="utf-8")
+        self._query_prestamo_logproceso_dev = SAP_PRESTAMO_LOGPROCESO_DEV_PATH.read_text(encoding="utf-8")
+        self._query_prestamo_trani = SAP_PRESTAMO_TRANI_PATH.read_text(encoding="utf-8")
         self._query_validacion_nc = SAP_VALIDACION_NC_PATH.read_text(encoding="utf-8")
         self._query_validacion_nc_articulos = SAP_VALIDACION_NC_ARTICULOS_PATH.read_text(
             encoding="utf-8"
@@ -171,6 +175,22 @@ class SapHanaRepository:
         )
         rows, _cols = self._ejecutar_sql(sql)
         return [str(row[0]).strip() for row in rows if row and row[0] is not None and str(row[0]).strip()]
+
+    def obtener_keys_prestamo_dev(self, fecha_desde: date) -> list[str]:
+        # Busca U_BOT_KEY de procesos DEV con error de inventario negativo.
+        sql = self._query_prestamo_logproceso_dev.replace(
+            "{{fecha_desde}}", fecha_desde.strftime("%Y-%m-%d")
+        )
+        rows, _cols = self._ejecutar_sql(sql)
+        return [str(row[0]).strip() for row in rows if row and row[0] is not None and str(row[0]).strip()]
+
+    def ejecutar_prestamo_trani(self, keys: list[str]) -> tuple[list[tuple[Any, ...]], list[str]]:
+        # Obtiene material, cantidad y almacen desde @SGE_TRANI para los keys dados.
+        if not keys:
+            return [], ["U_BOT_CODARTICULO", "U_PLA_CANTIDAD", "U_BOT_ALMACEN_DEVID"]
+        keys_in = _render_in_list(keys)
+        sql = self._query_prestamo_trani.replace("{{keys_in}}", keys_in)
+        return self._ejecutar_sql(sql)
 
     def ejecutar_validacion_nc(
         self,
@@ -705,7 +725,8 @@ class MySQLRepository:
         )
         return self.ejecutar_sql(sql)
 
-    def enviar_movimiento_por_enviar(self, id_movement: int) -> None:
+    def enviar_movimiento_por_enviar(self, id_movement: int) -> str:
+        # Retorna el mensaje de respuesta del SP.
         for intento in range(1, self._settings.reintentos + 1):
             conn = None
             try:
@@ -720,7 +741,10 @@ class MySQLRepository:
                 )
                 with conn.cursor() as cur:
                     cur.execute(self._query_enviar_movimiento, (id_movement,))
-                return
+                    row = cur.fetchone()
+                    if row:
+                        return str(row[0])
+                    return ""
             except pymysql.MySQLError as exc:
                 LOGGER.warning(
                     "SP sp_set_send_documents_movements_items fallo (intento %s/%s) id_movement %s: %s",

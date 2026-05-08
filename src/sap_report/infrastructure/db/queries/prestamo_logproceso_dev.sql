@@ -1,0 +1,16 @@
+SELECT 
+    T."U_BOT_KEY"
+FROM B1H_INVERSIONES_PROD."@SGE_LOGPROCESO" T
+INNER JOIN (
+    SELECT 
+        "U_BOT_KEY",
+        MAX("DocEntry") AS MAX_DOCENTRY
+    FROM B1H_INVERSIONES_PROD."@SGE_LOGPROCESO"
+    WHERE "CreateDate" > '{{fecha_desde}}'
+      AND "U_BOT_PROCESO" LIKE 'DEV%'
+    GROUP BY "U_BOT_KEY"
+) U
+ON T."U_BOT_KEY" = U."U_BOT_KEY"
+AND T."DocEntry" = U.MAX_DOCENTRY
+WHERE T."U_BOT_DESCRIPCION_ERROR" LIKE '%Quantity falls into negative inventory%'
+  AND T."U_BOT_ESTATUS" = 'A';

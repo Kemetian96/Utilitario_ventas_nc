@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from sap_report.domain import cuid_a_fecha, fecha_a_cuid
-from sap_report.infrastructure.db import MySQLRepository, PostgresRepository, SapHanaRepository
+from sap_report.infrastructure.db import MySQLRepository, PostgresRepository, SapHanaRepository, SapServiceLayerRepository
 from sap_report.infrastructure.export import (
     exportar_comparacion,
     exportar_excel,
@@ -24,6 +24,7 @@ class ReportService:
         sap_repository: SapHanaRepository,
         postgres_repository: PostgresRepository,
         mysql_repository: MySQLRepository,
+        sl_repository: SapServiceLayerRepository,
         sap_output_path: Path,
         postgres_output_path: Path,
         comparacion_output_path: Path,
@@ -32,6 +33,7 @@ class ReportService:
         self._sap_repository = sap_repository
         self._postgres_repository = postgres_repository
         self._mysql_repository = mysql_repository
+        self._sl_repository = sl_repository
         self._sap_output_path = sap_output_path
         self._postgres_output_path = postgres_output_path
         self._comparacion_output_path = comparacion_output_path
@@ -335,7 +337,6 @@ class ReportService:
         self,
         status_cb=None,
     ) -> tuple[list[tuple[Any, ...]], list[str]]:
-        # Flujo Prestamo: LOGPROCESO -> DocEntry -> documentos -> items -> stock SAP.
         columnas = [
             "UID_ORDERS",
             "U_BOT_DOCENTRY",
@@ -348,65 +349,78 @@ class ReportService:
             "Diferencia",
         ]
         fecha_desde = date.today() - timedelta(days=3)
-        if status_cb:
-            status_cb(f"Prestamo: buscando U_BOT_KEY desde {fecha_desde}...")
-        docentries = self._sap_repository.obtener_docentries_prestamo(fecha_desde)
-        if not docentries:
-            return [], columnas
-
-        if status_cb:
-            status_cb(f"Prestamo: consultando {len(docentries)} DocEntry en MySQL...")
-        doc_rows, doc_cols = self._mysql_repository.ejecutar_validar_igv_docs(docentries)
-        if not doc_rows:
-            return [], columnas
-
-        idx_doc_id = _find_col_index(doc_cols, ["id_document"])
-        idx_docentry = _find_col_index(doc_cols, ["docentry"])
-        docentry_por_orden = {
-            str(r[idx_doc_id]): str(r[idx_docentry])
-            for r in doc_rows
-            if r[idx_doc_id] is not None and r[idx_docentry] is not None
-        }
-        document_ids = [str(r[idx_doc_id]) for r in doc_rows if r[idx_doc_id] is not None]
-        if not document_ids:
-            return [], columnas
-
-        if status_cb:
-            status_cb(f"Prestamo: consultando items ({len(document_ids)}) en MySQL...")
-        items_rows, items_cols = self._mysql_repository.ejecutar_validar_igv_items(document_ids)
-        if not items_rows:
-            return [], columnas
-
-        idx_id_order = _find_col_index_optional(items_cols, ["id_orders"])
-        idx_uid = _find_col_index_optional(items_cols, ["uid_orders"])
-        idx_material = _find_col_index(items_cols, ["material"])
-        idx_centro = _find_col_index(items_cols, ["centro"])
-        idx_matcentro = _find_col_index(items_cols, ["material_centro"])
-        idx_cantidad = _find_col_index(items_cols, ["cantidad"])
-        idx_consignado = _find_col_index_optional(items_cols, ["consignado"])
-        idx_b2b = _find_col_index_optional(items_cols, ["b2b"])
-
         memoria: list[tuple[str, str, str, str, str, Any, Any, Any]] = []
         materiales: set[str] = set()
         centros: set[str] = set()
 
-        for row in items_rows:
-            id_order = str(row[idx_id_order]) if idx_id_order is not None and row[idx_id_order] is not None else ""
-            uid = str(row[idx_uid]) if idx_uid is not None and row[idx_uid] is not None else ""
-            docentry = docentry_por_orden.get(id_order, "")
-            material = str(row[idx_material]) if row[idx_material] is not None else ""
-            centro = str(row[idx_centro]) if row[idx_centro] is not None else ""
-            matcentro = str(row[idx_matcentro]) if row[idx_matcentro] is not None else material + centro
-            cantidad = row[idx_cantidad]
-            consignado = row[idx_consignado] if idx_consignado is not None else ""
-            b2b = row[idx_b2b] if idx_b2b is not None else ""
-            memoria.append((uid, docentry, material, centro, matcentro, cantidad, consignado, b2b))
-            if material:
-                materiales.add(material)
-            if centro:
-                centros.add(centro)
+        # Flujo 1: LOGPROCESO (estatus=0) → MySQL docs → MySQL items
+        if status_cb:
+            status_cb(f"Prestamo flujo-1: buscando DocEntry desde {fecha_desde}...")
+        docentries = self._sap_repository.obtener_docentries_prestamo(fecha_desde)
+        if docentries:
+            if status_cb:
+                status_cb(f"Prestamo flujo-1: {len(docentries)} DocEntry en MySQL...")
+            doc_rows, doc_cols = self._mysql_repository.ejecutar_validar_igv_docs(docentries)
+            if doc_rows:
+                idx_doc_id = _find_col_index(doc_cols, ["id_document"])
+                idx_docentry = _find_col_index(doc_cols, ["docentry"])
+                docentry_por_orden = {
+                    str(r[idx_doc_id]): str(r[idx_docentry])
+                    for r in doc_rows
+                    if r[idx_doc_id] is not None and r[idx_docentry] is not None
+                }
+                document_ids = [str(r[idx_doc_id]) for r in doc_rows if r[idx_doc_id] is not None]
+                if document_ids:
+                    items_rows, items_cols = self._mysql_repository.ejecutar_validar_igv_items(document_ids)
+                    if items_rows:
+                        idx_id_order = _find_col_index_optional(items_cols, ["id_orders"])
+                        idx_uid = _find_col_index_optional(items_cols, ["uid_orders"])
+                        idx_material = _find_col_index(items_cols, ["material"])
+                        idx_centro = _find_col_index(items_cols, ["centro"])
+                        idx_matcentro = _find_col_index(items_cols, ["material_centro"])
+                        idx_cantidad = _find_col_index(items_cols, ["cantidad"])
+                        idx_consignado = _find_col_index_optional(items_cols, ["consignado"])
+                        idx_b2b = _find_col_index_optional(items_cols, ["b2b"])
+                        for row in items_rows:
+                            id_order = str(row[idx_id_order]) if idx_id_order is not None and row[idx_id_order] is not None else ""
+                            uid = str(row[idx_uid]) if idx_uid is not None and row[idx_uid] is not None else ""
+                            docentry = docentry_por_orden.get(id_order, "")
+                            material = str(row[idx_material]) if row[idx_material] is not None else ""
+                            centro = str(row[idx_centro]) if row[idx_centro] is not None else ""
+                            matcentro = str(row[idx_matcentro]) if row[idx_matcentro] is not None else material + centro
+                            cantidad = row[idx_cantidad]
+                            consignado = row[idx_consignado] if idx_consignado is not None else ""
+                            b2b = row[idx_b2b] if idx_b2b is not None else ""
+                            memoria.append((uid, docentry, material, centro, matcentro, cantidad, consignado, b2b))
+                            if material:
+                                materiales.add(material)
+                            if centro:
+                                centros.add(centro)
 
-        if not materiales or not centros:
+        # Flujo 2: LOGPROCESO DEV (estatus=A, proceso LIKE DEV%) → @SGE_TRANI
+        if status_cb:
+            status_cb(f"Prestamo flujo-2: buscando U_BOT_KEY DEV desde {fecha_desde}...")
+        keys_dev = self._sap_repository.obtener_keys_prestamo_dev(fecha_desde)
+        if keys_dev:
+            if status_cb:
+                status_cb(f"Prestamo flujo-2: {len(keys_dev)} keys en @SGE_TRANI...")
+            trani_rows, trani_cols = self._sap_repository.ejecutar_prestamo_trani(keys_dev)
+            if trani_rows:
+                idx_mat = _find_col_index(trani_cols, ["u_bot_codarticulo"])
+                idx_cant = _find_col_index(trani_cols, ["u_pla_cantidad"])
+                idx_alm = _find_col_index(trani_cols, ["u_bot_almacen_devid"])
+                for row in trani_rows:
+                    material = str(row[idx_mat]) if row[idx_mat] is not None else ""
+                    centro = str(row[idx_alm]) if row[idx_alm] is not None else ""
+                    matcentro = material + centro
+                    cantidad = row[idx_cant]
+                    memoria.append(("", "", material, centro, matcentro, cantidad, "", ""))
+                    if material:
+                        materiales.add(material)
+                    if centro:
+                        centros.add(centro)
+
+        if not memoria or not materiales or not centros:
             return [], columnas
 
         if status_cb:
@@ -454,16 +468,27 @@ class ReportService:
         cuid_fin = fecha_a_cuid(datetime.combine(fecha_fin, datetime_time(23, 59, 59)))
         return self._mysql_repository.ejecutar_por_enviar(cuid_inicio, cuid_fin, tipo)
 
-    def enviar_movimiento_por_enviar(self, id_movement: int) -> None:
+    def enviar_movimiento_por_enviar(self, id_movement: int) -> str:
         if id_movement <= 0:
             raise ValueError("Id_movement invalido.")
-        self._mysql_repository.enviar_movimiento_por_enviar(id_movement)
+        return self._mysql_repository.enviar_movimiento_por_enviar(id_movement)
 
     def anular_movimiento_por_enviar(self, id_movement: int) -> int:
         # Actualiza el movimiento a estado 9 para reflejar anulacion manual.
         if id_movement <= 0:
             raise ValueError("Id_movement invalido.")
         return self._mysql_repository.anular_movimiento_por_enviar(id_movement)
+
+    def consultar_pago_sap(self, orden: str, company_db: str) -> dict[str, Any]:
+        orden = orden.strip()
+        if not orden:
+            raise ValueError("Orden vacía.")
+        return self._sl_repository.consultar_pago(orden, company_db)
+
+    def anular_pago_sap(self, doc_entry: int, company_db: str) -> None:
+        if doc_entry <= 0:
+            raise ValueError("DocEntry inválido.")
+        self._sl_repository.anular_pago(doc_entry, company_db)
 
     def validar_pagos(
         self,
