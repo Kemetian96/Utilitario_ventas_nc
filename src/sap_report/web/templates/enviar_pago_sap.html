@@ -171,13 +171,27 @@
   {% if result_json %}
     <section class="panel">
       <span class="section-label">JSON generado · {{ sociedad_key }}</span>
-      <div class="alert ok" style="margin-bottom:0">
-        Modo previsualización — el JSON no ha sido enviado a SAP.
-      </div>
+      {% if success %}
+        <div class="alert ok">{{ success }}</div>
+      {% else %}
+        <div class="alert warn" style="margin-bottom:0">
+          Previsualización — revisa el JSON antes de enviar a SAP.
+        </div>
+      {% endif %}
       <button class="button copy-btn" id="copy-btn" type="button">Copiar</button>
       <div class="json-wrap">
         <pre id="json-output">{{ result_json }}</pre>
       </div>
+      {% if not success %}
+        <form method="post" style="margin-top:14px;"
+              onsubmit="return confirm('¿Confirmas el envío a SAP ({{ sociedad_key }})?')">
+          <input type="hidden" name="accion" value="enviar">
+          <input type="hidden" name="payload_json" value="{{ result_json | e }}">
+          <div class="actions">
+            <button class="button" type="submit">Enviar a SAP</button>
+          </div>
+        </form>
+      {% endif %}
     </section>
   {% endif %}
 

@@ -501,6 +501,11 @@ class ReportService:
             raise ValueError("DocEntry inválido.")
         self._sl_repository.anular_pago(doc_entry, company_db)
 
+    def crear_pago_sap(self, payload: dict[str, Any], company_db: str) -> dict[str, Any]:
+        if not payload:
+            raise ValueError("Payload vacío.")
+        return self._sl_repository.crear_pago(payload, company_db)
+
     def consultar_datos_pago_pg(self, orden: str) -> list[dict[str, Any]]:
         orden = orden.strip()
         if not orden:
@@ -513,6 +518,15 @@ class ReportService:
 
     def consultar_payments_account_tienda(self, id_store: int) -> str | None:
         return self._mysql_repository.consultar_payments_account_tienda(id_store)
+
+    def consultar_datos_rma_pg(self, orden: str) -> dict[str, Any] | None:
+        orden = orden.strip()
+        if not orden:
+            raise ValueError("Orden vacía.")
+        rows, cols = self._postgres_repository.consultar_datos_rma(orden)
+        if not rows:
+            return None
+        return dict(zip(cols, rows[0]))
 
     def consultar_datos_factura_sap(self, orden: str, schema: str) -> dict[str, Any] | None:
         orden = orden.strip()

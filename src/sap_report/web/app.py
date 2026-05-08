@@ -523,8 +523,35 @@ def create_app() -> Flask:
                 form_data["transfer_account"] = parts[0] if parts else ""
                 form_data["u_syp_mppg"] = parts[1] if len(parts) > 1 else ""
 
+        success: str | None = None
+
         if request.method == "POST":
             accion = request.form.get("accion", "generar").strip()
+
+            if accion == "enviar":
+                payload_raw = request.form.get("payload_json", "").strip()
+                try:
+                    payload_dict = _json.loads(payload_raw)
+                    company_db = SL_COMPANIES[sociedad_key]
+                    resp = service.crear_pago_sap(payload_dict, company_db)
+                    doc_entry = resp.get("DocEntry", "")
+                    success = f"Pago creado correctamente en SAP ({sociedad_key}). DocEntry: {doc_entry}"
+                    result_json = payload_raw
+                except Exception as exc:
+                    error = str(exc)
+                    result_json = payload_raw
+                return render_template(
+                    "enviar_pago_sap.html",
+                    current_page="enviar-pago-sap",
+                    sociedad_key=sociedad_key,
+                    sl_companies=SL_COMPANIES,
+                    envio_options=_ENVIO_PAGO_OPTIONS,
+                    form_data=form_data,
+                    result_json=result_json,
+                    error=error,
+                    success=success,
+                    pagos_candidatos=None,
+                )
 
             if accion == "cambiar_sociedad":
                 nueva = request.form.get("sociedad", SL_COMPANY_DEFAULT).strip()
@@ -540,10 +567,12 @@ def create_app() -> Flask:
                 # Busca id_opt y tipo del método de pago seleccionado
                 id_opt: int | None = None
                 tipo_opt: str = ""
+                nombre_opt: str = ""
                 for opt in _ENVIO_PAGO_OPTIONS:
                     if opt["ta"] == ta and opt["mpg"] == mpg:
                         id_opt = opt["id_opt"]
                         tipo_opt = opt["tipo"]
+                        nombre_opt = opt["nombre"]
                         break
 
                 try:
@@ -589,13 +618,26 @@ def create_app() -> Flask:
                     if tipo_opt == "Caja Tda" and id_store is not None:
                         ta = service.consultar_payments_account_tienda(int(id_store)) or ta
 
-                    # Construye CounterReference: eid-referencia (general) o eid-fecha (Caja Tda)
-                    referencia = str(datos.get("referencia") or "")
-                    fecha_datos = str(datos.get("fecha") or "")
+                    # Construye CounterReference y U_PLA_CODTUTATI según tipo de pago
+                    referencia = str(datos.get("referencia") or "").strip()
+                    fecha_datos = str(datos.get("fecha") or "").strip()
                     eid_tienda = ""
                     if id_store is not None:
-                        eid_tienda = service.consultar_eid_tienda(int(id_store)) or ""
-                    cr_sufijo = fecha_datos if tipo_opt == "Caja Tda" else referencia
+                        eid_tienda = (service.consultar_eid_tienda(int(id_store)) or "").strip()
+
+                    uid_orders_final = str(datos.get("uid_orders") or orden).strip()
+                    codtutati = str(datos.get("eid_orders") or "").strip()
+
+                    if nombre_opt == "RMA":
+                        rma = service.consultar_datos_rma_pg(uid_orders_final)
+                        uid_rmas = str(rma.get("uid_rmas") or "").strip() if rma else ""
+                        codtutati = str(rma.get("id_users") or "").strip() if rma else ""
+                        cr_sufijo = uid_rmas
+                    elif tipo_opt == "Caja Tda":
+                        cr_sufijo = fecha_datos
+                    else:
+                        cr_sufijo = referencia
+
                     counter_reference = f"{eid_tienda}-{cr_sufijo}" if eid_tienda else cr_sufijo
 
                     # Consulta DocEntry y U_BOT_DOCENTRY desde SAP HANA
@@ -606,22 +648,22 @@ def create_app() -> Flask:
 
                     payload: dict[str, Any] = {
                         "TransferSum": monto,
-                        "U_PLA_ORDENWEB": str(datos.get("uid_orders") or orden),
+                        "U_PLA_ORDENWEB": uid_orders_final,
                         "CardCode": "C99999999999",
-                        "DocDate": str(datos.get("fecha") or ""),
+                        "DocDate": fecha_datos,
                         "TransferAccount": ta,
-                        "U_PLA_CODTUTATI": str(datos.get("eid_orders") or ""),
+                        "U_PLA_CODTUTATI": codtutati,
                         "U_SYP_COD0325": "3D0835",
                         "U_SYP_COD0318": "3D0101",
                         "CounterReference": counter_reference,
-                        "TransferReference": str(datos.get("uid_orders") or ""),
+                        "TransferReference": uid_orders_final,
                         "U_SYP_MPPG": mpg,
                         "U_SYP_TPOOPERI": "01",
-                        "ProjectCode": "",
+                        "ProjectCode": "MONEDERO" if nombre_opt == "RMA" else "",
                         "PaymentInvoices": [
                             {
                                 "SumApplied": monto,
-                                "U_BOT_NUMATCARD": str(datos.get("eid_orders") or ""),
+                                "U_BOT_NUMATCARD": codtutati,
                                 "AppliedFC": monto,
                                 "DocEntry": inv_doc_entry,
                                 "DocLine": 0,
@@ -655,6 +697,7 @@ def create_app() -> Flask:
             form_data=form_data,
             result_json=result_json,
             error=error,
+            success=success,
             pagos_candidatos=None,
         )
 

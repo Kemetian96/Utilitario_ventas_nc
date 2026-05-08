@@ -52,3 +52,12 @@ class SapServiceLayerRepository:
             res.raise_for_status()
         finally:
             self._logout(session)
+
+    def crear_pago(self, payload: dict[str, Any], company_db: str) -> dict[str, Any]:
+        session = self._make_session(company_db)
+        try:
+            res = session.post(f"{self._url}/IncomingPayments", json=payload, timeout=30)
+            res.raise_for_status()
+            return res.json()
+        finally:
+            self._logout(session)

@@ -134,7 +134,7 @@
                 <td>{{ pago.tipo_pago }}</td>
                 <td>{{ pago.fecha }}</td>
                 <td class="monto-cell">{{ "%.2f"|format(pago.monto) }}</td>
-                <td style="display:flex; gap:6px; align-items:center;">
+                <td>
                   <form method="post" style="display:inline"
                         onsubmit="return confirm('¿Confirmas anular el pago DocEntry {{ pago.doc_entry }}?')">
                     <input type="hidden" name="accion" value="anular">
@@ -142,10 +142,6 @@
                     <input type="hidden" name="doc_entry" value="{{ pago.doc_entry }}">
                     <button class="button danger inline-small" type="submit">Anular</button>
                   </form>
-                  <a class="button inline-small"
-                     href="{{ url_for('enviar_pago_sap', orden=orden_value, tipo_pago_key=pago.ta + '|' + pago.mpg) }}">
-                    Enviar
-                  </a>
                 </td>
               </tr>
             {% endfor %}

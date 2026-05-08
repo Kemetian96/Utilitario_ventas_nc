@@ -48,6 +48,7 @@ MYSQL_POR_ENVIAR_PATH = Path(__file__).resolve().parent / "queries" / "PorEnviar
 MYSQL_ANULAR_MOVIMIENTO_PATH = Path(__file__).resolve().parent / "queries" / "anular_movimiento_por_enviar.sql"
 MYSQL_ENVIAR_MOVIMIENTO_PATH = Path(__file__).resolve().parent / "queries" / "enviar_movimiento_por_enviar.sql"
 PG_DATOS_PAGO_PATH = Path(__file__).resolve().parent / "queries" / "datos_pago_pg.sql"
+PG_DATOS_RMA_PATH = Path(__file__).resolve().parent / "queries" / "datos_rma_pg.sql"
 SAP_DATOS_FACTURA_PATH = Path(__file__).resolve().parent / "queries" / "datos_factura_sap.sql"
 
 
@@ -394,6 +395,7 @@ class PostgresRepository:
         self._query_nc = PG_NC_QUERY_PATH.read_text(encoding="utf-8")
         self._query_patch_etl = PG_PATCH_ETL_PATH.read_text(encoding="utf-8")
         self._query_datos_pago = PG_DATOS_PAGO_PATH.read_text(encoding="utf-8")
+        self._query_datos_rma = PG_DATOS_RMA_PATH.read_text(encoding="utf-8")
 
     def ejecutar_consulta_sql(
         self,
@@ -509,6 +511,35 @@ class PostgresRepository:
             conn.autocommit = True
             cur = conn.cursor()
             cur.execute(self._query_datos_pago, {"orden": orden})
+            rows = cur.fetchall()
+            cols = [c[0] for c in cur.description] if cur.description else []
+            return rows, cols
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
+
+    def consultar_datos_rma(self, orden: str) -> tuple[list[tuple[Any, ...]], list[str]]:
+        conn = None
+        cur = None
+        try:
+            conn = psycopg2.connect(
+                host=self._settings.pg_host,
+                dbname=self._settings.pg_name,
+                user=self._settings.pg_user,
+                password=self._settings.pg_password,
+                port=self._settings.pg_port,
+                sslmode=self._settings.pg_sslmode,
+                connect_timeout=self._settings.pg_connect_timeout,
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=5,
+            )
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute(self._query_datos_rma, {"orden": orden})
             rows = cur.fetchall()
             cols = [c[0] for c in cur.description] if cur.description else []
             return rows, cols
