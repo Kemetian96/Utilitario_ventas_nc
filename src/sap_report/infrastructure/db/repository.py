@@ -47,6 +47,8 @@ MYSQL_VALIDAR_PAGOS_PATH = Path(__file__).resolve().parent / "queries" / "Valida
 MYSQL_POR_ENVIAR_PATH = Path(__file__).resolve().parent / "queries" / "PorEnviar.sql"
 MYSQL_ANULAR_MOVIMIENTO_PATH = Path(__file__).resolve().parent / "queries" / "anular_movimiento_por_enviar.sql"
 MYSQL_ENVIAR_MOVIMIENTO_PATH = Path(__file__).resolve().parent / "queries" / "enviar_movimiento_por_enviar.sql"
+PG_DATOS_PAGO_PATH = Path(__file__).resolve().parent / "queries" / "datos_pago_pg.sql"
+SAP_DATOS_FACTURA_PATH = Path(__file__).resolve().parent / "queries" / "datos_factura_sap.sql"
 
 
 class SapHanaRepository:
@@ -74,6 +76,7 @@ class SapHanaRepository:
             encoding="utf-8"
         )
         self._query_validar_pagos = SAP_VALIDAR_PAGOS_PATH.read_text(encoding="utf-8")
+        self._query_datos_factura = SAP_DATOS_FACTURA_PATH.read_text(encoding="utf-8")
 
     def ejecutar_consulta_sql(
         self,
@@ -230,6 +233,19 @@ class SapHanaRepository:
         )
         return self._ejecutar_sql(sql)
 
+    def ejecutar_datos_factura(self, orden: str, schema: str) -> tuple[list[tuple[Any, ...]], list[str]]:
+        sql = (
+            self._query_datos_factura
+            .replace("{{schema}}", schema)
+            .replace("{{orden}}", orden.replace("'", "''"))
+        )
+        return self._ejecutar_sql(sql)
+
+    def ejecutar_visor_nubefact(self, fecha: date) -> tuple[list[tuple[Any, ...]], list[str]]:
+        fecha_str = fecha.strftime("%Y-%m-%d")
+        sql = f"CALL B1H_INVERSIONES_PROD.PLA_VISOR_NUBEFACT('{fecha_str}')"
+        return self._ejecutar_sql(sql)
+
     def _ejecutar_sql(self, sql: str) -> tuple[list[tuple[Any, ...]], list[str]]:
         # Reintenta la conexion ante fallos temporales.
         for intento in range(1, self._settings.reintentos + 1):
@@ -377,6 +393,7 @@ class PostgresRepository:
         self._query = PG_QUERY_PATH.read_text(encoding="utf-8")
         self._query_nc = PG_NC_QUERY_PATH.read_text(encoding="utf-8")
         self._query_patch_etl = PG_PATCH_ETL_PATH.read_text(encoding="utf-8")
+        self._query_datos_pago = PG_DATOS_PAGO_PATH.read_text(encoding="utf-8")
 
     def ejecutar_consulta_sql(
         self,
@@ -471,6 +488,35 @@ class PostgresRepository:
         finally:
             cur.close()
             conn.close()
+
+    def consultar_datos_pago(self, orden: str) -> tuple[list[tuple[Any, ...]], list[str]]:
+        conn = None
+        cur = None
+        try:
+            conn = psycopg2.connect(
+                host=self._settings.pg_host,
+                dbname=self._settings.pg_name,
+                user=self._settings.pg_user,
+                password=self._settings.pg_password,
+                port=self._settings.pg_port,
+                sslmode=self._settings.pg_sslmode,
+                connect_timeout=self._settings.pg_connect_timeout,
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=5,
+            )
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute(self._query_datos_pago, {"orden": orden})
+            rows = cur.fetchall()
+            cols = [c[0] for c in cur.description] if cur.description else []
+            return rows, cols
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
 
     def ejecutar_migrar_oc(self, fecha: date) -> None:
         # Ejecuta migracion OC en PostgreSQL con fecha especifica.
@@ -598,6 +644,24 @@ class MySQLRepository:
                     conn.close()
 
         raise RuntimeError("No se pudo ejecutar la consulta MySQL tras todos los reintentos.")
+
+    def consultar_eid_tienda(self, id_store: int) -> str | None:
+        rows, _ = self.ejecutar_sql(
+            "SELECT eid FROM main.t_stores WHERE id_stores = %s",
+            (id_store,),
+        )
+        if rows and rows[0][0] is not None:
+            return str(rows[0][0])
+        return None
+
+    def consultar_payments_account_tienda(self, id_store: int) -> str | None:
+        rows, _ = self.ejecutar_sql(
+            "SELECT payments_account FROM main.t_stores WHERE id_stores = %s",
+            (id_store,),
+        )
+        if rows and rows[0][0] is not None:
+            return str(rows[0][0])
+        return None
 
     def ejecutar_validar_igv_docs(
         self,

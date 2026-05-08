@@ -1,5 +1,6 @@
 import calendar
 import logging
+import re
 import time
 from datetime import date, datetime, time as datetime_time, timedelta
 from decimal import Decimal
@@ -483,12 +484,74 @@ class ReportService:
         orden = orden.strip()
         if not orden:
             raise ValueError("Orden vacía.")
-        return self._sl_repository.consultar_pago(orden, company_db)
+        data = self._sl_repository.consultar_pago(orden, company_db)
+        if not data.get("value"):
+            try:
+                rows, cols = self._postgres_repository.consultar_datos_pago(orden)
+                if rows:
+                    uid = dict(zip(cols, rows[0])).get("uid_orders")
+                    if uid and uid != orden:
+                        data = self._sl_repository.consultar_pago(uid, company_db)
+            except Exception:
+                pass
+        return data
 
     def anular_pago_sap(self, doc_entry: int, company_db: str) -> None:
         if doc_entry <= 0:
             raise ValueError("DocEntry inválido.")
         self._sl_repository.anular_pago(doc_entry, company_db)
+
+    def consultar_datos_pago_pg(self, orden: str) -> list[dict[str, Any]]:
+        orden = orden.strip()
+        if not orden:
+            raise ValueError("Orden vacía.")
+        rows, cols = self._postgres_repository.consultar_datos_pago(orden)
+        return [dict(zip(cols, row)) for row in rows]
+
+    def consultar_eid_tienda(self, id_store: int) -> str | None:
+        return self._mysql_repository.consultar_eid_tienda(id_store)
+
+    def consultar_payments_account_tienda(self, id_store: int) -> str | None:
+        return self._mysql_repository.consultar_payments_account_tienda(id_store)
+
+    def consultar_datos_factura_sap(self, orden: str, schema: str) -> dict[str, Any] | None:
+        orden = orden.strip()
+        if not orden:
+            raise ValueError("Orden vacía.")
+        rows, cols = self._sap_repository.ejecutar_datos_factura(orden, schema)
+        if not rows:
+            return None
+        return dict(zip(cols, rows[0]))
+
+    def consultar_nubefact(self) -> tuple[list[dict[str, Any]], list[str]]:
+        today = date.today()
+        fechas = [today - timedelta(days=i) for i in range(1, 8)]
+        # {fecha_str: {estado: cantidad}}
+        pivot: dict[str, dict[str, Any]] = {}
+        all_estados: list[str] = []
+        for fecha in fechas:
+            fecha_str = fecha.strftime("%Y-%m-%d")
+            try:
+                rows, _ = self._sap_repository.ejecutar_visor_nubefact(fecha)
+                pivot[fecha_str] = {}
+                for row in rows:
+                    # col 0 = estado_documento, col 1 = cantidad
+                    estado = re.sub(r'^\d+\.\s*', '', str(row[0])) if row[0] is not None else "—"
+                    cantidad = row[1] if len(row) > 1 else None
+                    pivot[fecha_str][estado] = cantidad
+                    if estado not in all_estados:
+                        all_estados.append(estado)
+            except Exception as exc:
+                LOGGER.warning("Nubefact fallo para %s: %s", fecha, exc)
+                pivot[fecha_str] = {}
+        cols = ["Fecha"] + all_estados
+        result_rows: list[dict[str, Any]] = []
+        for fecha in [f.strftime("%Y-%m-%d") for f in fechas]:
+            row_dict: dict[str, Any] = {"Fecha": fecha}
+            for estado in all_estados:
+                row_dict[estado] = pivot.get(fecha, {}).get(estado, "")
+            result_rows.append(row_dict)
+        return result_rows, cols
 
     def validar_pagos(
         self,

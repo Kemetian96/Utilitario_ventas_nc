@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+
+{% block title %}Envío de pago SAP | SAP Web{% endblock %}
+
+{% block content %}
+  <style>
+    .content { max-width: 760px; }
+
+    .sociedad-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .sociedad-label {
+      font-size: 0.76rem;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .sociedad-btn {
+      font-size: 0.76rem;
+      padding: 4px 14px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--text);
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .sociedad-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .sociedad-btn:not(.active):hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .json-wrap {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      margin-top: 10px;
+    }
+    .json-wrap pre {
+      margin: 0;
+      font-size: 0.82rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: var(--text);
+    }
+    .copy-btn {
+      float: right;
+      font-size: 0.72rem;
+      padding: 3px 10px;
+      margin-bottom: 8px;
+      cursor: pointer;
+    }
+  </style>
+
+  <!-- Selector de sociedad -->
+  <div class="sociedad-bar">
+    <span class="sociedad-label">Sociedad:</span>
+    {% for key in sl_companies %}
+      <form method="post" style="display:inline">
+        <input type="hidden" name="accion" value="cambiar_sociedad">
+        <input type="hidden" name="sociedad" value="{{ key }}">
+        <button type="submit"
+                class="sociedad-btn {% if key == sociedad_key %}active{% endif %}">
+          {{ key }}
+        </button>
+      </form>
+    {% endfor %}
+  </div>
+
+  <section class="panel">
+    <form method="post" id="envio-form">
+      <input type="hidden" name="accion" value="generar">
+      <input type="hidden" name="transfer_account" id="transfer-account"
+             value="{{ form_data.get('transfer_account', '') }}">
+      <input type="hidden" name="u_syp_mppg" id="u-syp-mppg"
+             value="{{ form_data.get('u_syp_mppg', '') }}">
+
+      <div class="form-grid">
+        <div class="field">
+          <label for="tipo-pago-select">Método de pago</label>
+          <select id="tipo-pago-select" name="tipo_pago_key" required>
+            <option value="">-- Seleccionar --</option>
+            {% for opt in envio_options | selectattr('mpg') %}
+              <option value="{{ opt.ta }}|{{ opt.mpg }}"
+                {% if form_data.get('tipo_pago_key') == opt.ta + '|' + opt.mpg %}selected{% endif %}>
+                {{ opt.tipo }} · {{ opt.nombre }}
+              </option>
+            {% endfor %}
+            <option disabled>── Próximo desarrollo ──</option>
+            {% for opt in envio_options | rejectattr('mpg') %}
+              <option value="{{ opt.ta }}|{{ opt.mpg }}" disabled>
+                {{ opt.tipo }} · {{ opt.nombre }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="orden">U_PLA_ORDENWEB</label>
+          <input id="orden" name="orden" type="text" autocomplete="off"
+                 placeholder="Ej. FE58AX82GELL" required
+                 value="{{ form_data.get('orden', '') }}">
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="button" type="submit">Generar</button>
+      </div>
+    </form>
+
+    {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  </section>
+
+  {% if pagos_candidatos %}
+    <section class="panel">
+      <span class="section-label">Seleccionar pago</span>
+      <div class="alert warn" style="margin-bottom: 14px;">
+        Se encontraron {{ pagos_candidatos | length }} pagos del mismo tipo para esta orden.
+        Selecciona cuál enviar a SAP.
+      </div>
+      <form method="post">
+        <input type="hidden" name="accion" value="confirmar">
+        <input type="hidden" name="transfer_account" value="{{ form_data.get('transfer_account', '') }}">
+        <input type="hidden" name="u_syp_mppg" value="{{ form_data.get('u_syp_mppg', '') }}">
+        <input type="hidden" name="tipo_pago_key" value="{{ form_data.get('tipo_pago_key', '') }}">
+        <input type="hidden" name="orden" value="{{ form_data.get('orden', '') }}">
+        <table style="width:100%; border-collapse:collapse; font-size:0.83rem; margin-bottom:14px;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--line); color:var(--muted);">
+              <th style="padding:6px 8px; text-align:left; width:36px;"></th>
+              <th style="padding:6px 8px; text-align:left;">#</th>
+              <th style="padding:6px 8px; text-align:left;">Fecha</th>
+              <th style="padding:6px 8px; text-align:left;">Monto</th>
+              <th style="padding:6px 8px; text-align:left;">Referencia</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in pagos_candidatos %}
+            <tr style="border-bottom:1px solid var(--line);">
+              <td style="padding:7px 8px;">
+                <input type="radio" name="row_index" value="{{ loop.index0 }}"
+                       {% if loop.first %}checked{% endif %}>
+              </td>
+              <td style="padding:7px 8px; color:var(--muted);">{{ loop.index }}</td>
+              <td style="padding:7px 8px;">{{ row.get('fecha', '—') }}</td>
+              <td style="padding:7px 8px;">{{ row.get('monto', '—') }}</td>
+              <td style="padding:7px 8px;">{{ row.get('referencia', '—') }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="actions">
+          <button class="button" type="submit">Confirmar selección</button>
+        </div>
+      </form>
+    </section>
+  {% endif %}
+
+  {% if result_json %}
+    <section class="panel">
+      <span class="section-label">JSON generado · {{ sociedad_key }}</span>
+      <div class="alert ok" style="margin-bottom:0">
+        Modo previsualización — el JSON no ha sido enviado a SAP.
+      </div>
+      <button class="button copy-btn" id="copy-btn" type="button">Copiar</button>
+      <div class="json-wrap">
+        <pre id="json-output">{{ result_json }}</pre>
+      </div>
+    </section>
+  {% endif %}
+
+  <script>
+    var sel = document.getElementById("tipo-pago-select");
+    var taInput = document.getElementById("transfer-account");
+    var mpgInput = document.getElementById("u-syp-mppg");
+
+    function applyTipoPago() {
+      var parts = sel.value.split("|");
+      taInput.value = parts[0] || "";
+      mpgInput.value = parts[1] || "";
+    }
+
+    sel.addEventListener("change", applyTipoPago);
+    if (sel.value) { applyTipoPago(); }
+
+    var copyBtn = document.getElementById("copy-btn");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", function () {
+        var text = document.getElementById("json-output").textContent;
+        navigator.clipboard.writeText(text).then(function () {
+          copyBtn.textContent = "Copiado";
+          setTimeout(function () { copyBtn.textContent = "Copiar"; }, 1500);
+        });
+      });
+    }
+  </script>
+{% endblock %}

@@ -23,6 +23,11 @@ SL_COMPANIES = {
 }
 SL_COMPANY_DEFAULT = "COMERCIALMONT"
 
+SL_BOT_CONFIG = {
+    "COMERCIALMONT": {"U_BOT_TIPO": "VTA_COMMONT", "U_BOT_CODCIA": "B1H_COMERCIALMONT_PROD"},
+    "PEDRAL":        {"U_BOT_TIPO": "VTA_PEDRAL",  "U_BOT_CODCIA": "B1H_PEDRAL_PROD"},
+}
+
 
 MODULES = [
     {
@@ -40,13 +45,6 @@ MODULES = [
         "sidebar": False,
     },
     {
-        "page": "ejecutar-reporte",
-        "title": "Ejecutar reporte",
-        "subtitle": "SAP, TUTATI y comparación.",
-        "url": "/ejecutar-reporte",
-        "sidebar": True,
-    },
-    {
         "page": "validar-articulos",
         "title": "Validar artículos",
         "subtitle": "Patch ETL y URLs de validación.",
@@ -61,17 +59,24 @@ MODULES = [
         "sidebar": True,
     },
     {
-        "page": "revisar-hilos",
-        "title": "Revisar hilos",
-        "subtitle": "Consulta rápida de pendientes.",
-        "url": "/revisar-hilos",
-        "sidebar": False,
+        "page": "por-enviar",
+        "title": "Por Enviar",
+        "subtitle": "Anuladas, pendientes y ventas.",
+        "url": "/por-enviar",
+        "sidebar": True,
     },
     {
         "page": "prestamo",
         "title": "Préstamo",
         "subtitle": "Diferencias de stock recientes.",
         "url": "/prestamo",
+        "sidebar": True,
+    },
+    {
+        "page": "ejecutar-reporte",
+        "title": "Ejecutar reporte",
+        "subtitle": "SAP, TUTATI y comparación.",
+        "url": "/ejecutar-reporte",
         "sidebar": True,
     },
     {
@@ -82,18 +87,32 @@ MODULES = [
         "sidebar": True,
     },
     {
-        "page": "por-enviar",
-        "title": "Por Enviar",
-        "subtitle": "Anuladas, pendientes y ventas.",
-        "url": "/por-enviar",
-        "sidebar": True,
-    },
-    {
         "page": "consultar-pago-sap",
         "title": "Consultar pago SAP",
         "subtitle": "Detalle de pago por orden web.",
         "url": "/consultar-pago-sap",
         "sidebar": True,
+    },
+    {
+        "page": "enviar-pago-sap",
+        "title": "Envío de pago SAP",
+        "subtitle": "Construye el JSON de pago para SAP B1.",
+        "url": "/enviar-pago-sap",
+        "sidebar": True,
+    },
+    {
+        "page": "validacion-nubefact",
+        "title": "Validación Nubefact",
+        "subtitle": "Visor de documentos Nubefact últimos 7 días.",
+        "url": "/validacion-nubefact",
+        "sidebar": True,
+    },
+    {
+        "page": "revisar-hilos",
+        "title": "Revisar hilos",
+        "subtitle": "Consulta rápida de pendientes.",
+        "url": "/revisar-hilos",
+        "sidebar": False,
     },
 ]
 
@@ -464,6 +483,8 @@ def create_app() -> Flask:
                             "tipo_pago": tipo_pago,
                             "fecha": v.get("DocDate", "")[:10],
                             "monto": v.get("TransferSum", 0),
+                            "ta": str(v.get("TransferAccount") or ""),
+                            "mpg": str(v.get("U_SYP_MPPG") or ""),
                         })
                 except Exception as exc:
                     error = str(exc)
@@ -478,6 +499,180 @@ def create_app() -> Flask:
             error=error,
             sociedad_key=sociedad_key,
             sl_companies=SL_COMPANIES,
+        )
+
+    @app.route("/enviar-pago-sap", methods=["GET", "POST"])
+    def enviar_pago_sap() -> str:
+        import json as _json
+        result_json: str | None = None
+        error: str | None = None
+        form_data: dict = {}
+
+        sociedad_key = session.get("sl_sociedad", SL_COMPANY_DEFAULT)
+        if sociedad_key not in SL_COMPANIES:
+            sociedad_key = SL_COMPANY_DEFAULT
+
+        if request.method == "GET":
+            orden_param = request.args.get("orden", "").strip()
+            tipo_pago_param = request.args.get("tipo_pago_key", "").strip()
+            if orden_param:
+                form_data["orden"] = orden_param
+            if tipo_pago_param:
+                form_data["tipo_pago_key"] = tipo_pago_param
+                parts = tipo_pago_param.split("|", 1)
+                form_data["transfer_account"] = parts[0] if parts else ""
+                form_data["u_syp_mppg"] = parts[1] if len(parts) > 1 else ""
+
+        if request.method == "POST":
+            accion = request.form.get("accion", "generar").strip()
+
+            if accion == "cambiar_sociedad":
+                nueva = request.form.get("sociedad", SL_COMPANY_DEFAULT).strip()
+                if nueva in SL_COMPANIES:
+                    session["sl_sociedad"] = nueva
+                    sociedad_key = nueva
+            else:
+                form_data = dict(request.form)
+                ta = request.form.get("transfer_account", "").strip()
+                mpg = request.form.get("u_syp_mppg", "").strip()
+                orden = request.form.get("orden", "").strip()
+
+                # Busca id_opt y tipo del método de pago seleccionado
+                id_opt: int | None = None
+                tipo_opt: str = ""
+                for opt in _ENVIO_PAGO_OPTIONS:
+                    if opt["ta"] == ta and opt["mpg"] == mpg:
+                        id_opt = opt["id_opt"]
+                        tipo_opt = opt["tipo"]
+                        break
+
+                try:
+                    # Consulta datos desde PostgreSQL
+                    pg_rows = service.consultar_datos_pago_pg(orden)
+
+                    if not pg_rows:
+                        raise ValueError(f"No se encontró la orden '{orden}' en TUTATI.")
+
+                    # Filtra candidatos por tipo de pago; si no hay match usa todos
+                    candidatos = (
+                        [r for r in pg_rows if r.get("Pago") == id_opt]
+                        if id_opt is not None else []
+                    )
+                    if not candidatos:
+                        candidatos = pg_rows
+
+                    # Múltiples candidatos y aún no se ha confirmado → pedir selección
+                    if len(candidatos) > 1 and accion != "confirmar":
+                        return render_template(
+                            "enviar_pago_sap.html",
+                            current_page="enviar-pago-sap",
+                            sociedad_key=sociedad_key,
+                            sl_companies=SL_COMPANIES,
+                            envio_options=_ENVIO_PAGO_OPTIONS,
+                            form_data=form_data,
+                            result_json=None,
+                            error=None,
+                            pagos_candidatos=candidatos,
+                        )
+
+                    if accion == "confirmar":
+                        row_index = int(request.form.get("row_index", 0))
+                        datos = candidatos[min(row_index, len(candidatos) - 1)]
+                    else:
+                        datos = candidatos[0]
+
+                    monto = str(datos.get("monto") or "")
+                    bot_cfg = SL_BOT_CONFIG.get(sociedad_key, SL_BOT_CONFIG[SL_COMPANY_DEFAULT])
+                    id_store = datos.get("id_stores")
+
+                    # Caja Tda: TransferAccount viene de MySQL (payments_account de la tienda)
+                    if tipo_opt == "Caja Tda" and id_store is not None:
+                        ta = service.consultar_payments_account_tienda(int(id_store)) or ta
+
+                    # Construye CounterReference: eid-referencia (general) o eid-fecha (Caja Tda)
+                    referencia = str(datos.get("referencia") or "")
+                    fecha_datos = str(datos.get("fecha") or "")
+                    eid_tienda = ""
+                    if id_store is not None:
+                        eid_tienda = service.consultar_eid_tienda(int(id_store)) or ""
+                    cr_sufijo = fecha_datos if tipo_opt == "Caja Tda" else referencia
+                    counter_reference = f"{eid_tienda}-{cr_sufijo}" if eid_tienda else cr_sufijo
+
+                    # Consulta DocEntry y U_BOT_DOCENTRY desde SAP HANA
+                    schema = SL_COMPANIES[sociedad_key]
+                    factura = service.consultar_datos_factura_sap(orden, schema)
+                    inv_doc_entry = int(factura["DocEntry"]) if factura and factura.get("DocEntry") is not None else ""
+                    bot_docentry = int(factura["U_BOT_DOCENTRY"]) if factura and factura.get("U_BOT_DOCENTRY") is not None else ""
+
+                    payload: dict[str, Any] = {
+                        "TransferSum": monto,
+                        "U_PLA_ORDENWEB": str(datos.get("uid_orders") or orden),
+                        "CardCode": "C99999999999",
+                        "DocDate": str(datos.get("fecha") or ""),
+                        "TransferAccount": ta,
+                        "U_PLA_CODTUTATI": str(datos.get("eid_orders") or ""),
+                        "U_SYP_COD0325": "3D0835",
+                        "U_SYP_COD0318": "3D0101",
+                        "CounterReference": counter_reference,
+                        "TransferReference": str(datos.get("uid_orders") or ""),
+                        "U_SYP_MPPG": mpg,
+                        "U_SYP_TPOOPERI": "01",
+                        "ProjectCode": "",
+                        "PaymentInvoices": [
+                            {
+                                "SumApplied": monto,
+                                "U_BOT_NUMATCARD": str(datos.get("eid_orders") or ""),
+                                "AppliedFC": monto,
+                                "DocEntry": inv_doc_entry,
+                                "DocLine": 0,
+                                "InvoiceType": "it_Invoice",
+                            }
+                        ],
+                        "DocType": "rCustomer",
+                        "U_BOT_ROBOT": "S",
+                        "U_BOT_DOCENTRY": bot_docentry,
+                        "U_BOT_TIPO": bot_cfg["U_BOT_TIPO"],
+                        "U_BOT_CODCIA": bot_cfg["U_BOT_CODCIA"],
+                        "U_BOT_ACCION": 5,
+                        "U_SGE_INTERCOMPANY": "N",
+                        "U_SGE_ECOMMERCE": "N",
+                    }
+                    if tipo_opt != "Cuentas por pagar - saldo":
+                        cashflow_id = 59 if tipo_opt == "Caja Tda" else 60
+                        payload["CashFlowAssignments"] = [
+                            {"CashFlowLineItemID": cashflow_id, "PaymentMeans": "pmtBankTransfer"}
+                        ]
+                    result_json = _json.dumps(payload, indent=2, ensure_ascii=False)
+                except Exception as exc:
+                    error = str(exc)
+
+        return render_template(
+            "enviar_pago_sap.html",
+            current_page="enviar-pago-sap",
+            sociedad_key=sociedad_key,
+            sl_companies=SL_COMPANIES,
+            envio_options=_ENVIO_PAGO_OPTIONS,
+            form_data=form_data,
+            result_json=result_json,
+            error=error,
+            pagos_candidatos=None,
+        )
+
+    @app.get("/validacion-nubefact")
+    def validacion_nubefact() -> str:
+        rows: list[dict] = []
+        cols: list[str] = []
+        error: str | None = None
+        try:
+            rows, cols = service.consultar_nubefact()
+        except Exception as exc:
+            error = str(exc)
+        return render_template(
+            "validacion_nubefact.html",
+            current_page="validacion-nubefact",
+            rows=rows,
+            cols=cols,
+            error=error,
         )
 
     @app.get("/descargas/<kind>")
@@ -544,39 +739,48 @@ def _get_current_module(current_page: str) -> dict[str, str]:
     return MODULES[0]
 
 
-_TIPO_PAGO_MAP: list[tuple[str | None, str | None, str, str]] = [
-    # (TransferAccount, U_SYP_MPPG, nombre, tipo)
-    # None = campo vacío en la tabla → no se valida ese campo
-    ("10310002", "005", "Visa (VisaNet)",                               "Tarjetas Visanet"),
-    ("10310002", "006", "Visa Crédito",                                 "Tarjetas Visanet"),
-    ("10310001", None,  "Mastercard (MC Peru)",                         "Tarjetas MCM"),
-    ("10310001", "005", "Mastercard Crédito",                           "Tarjetas MCM"),
-    ("10310001", "006", "Mastercard Débito",                            "Tarjetas MCM"),
-    ("10310003", "006", "Amex (Expressnet)",                            "Tarjetas Expressnet"),
-    ("10310020", "003", "Tarjeta de crédito o débito, Yape, Plin - Izipay", "Pago Izipay"),
-    ("10310020", None,  "Tarjeta de crédito o débito - Izipay",         "Pago Izipay"),
-    ("10300003", "001", "Dep. bco. BCP",                                "Deposito BCP"),
-    ("10300006", None,  "Dep. bco. Scotiabank",                         "Deposito Scotiabank"),
-    ("10300007", None,  "Dep. bco. Interbank",                          "Deposito Interbank"),
-    ("10300008", None,  "Dep. bco. BBVA",                               "Deposito BBVA"),
-    (None,       "008", "Caja Tda",                                     "Caja Tda"),
-    ("46111004", "001", "Monedero",                                     "Cuentas por pagar - saldo"),
-    ("46111004", "004", "RMA",                                          "Cuentas por pagar - saldo"),
-    ("64111001", None,  "Transferencia Gratuita",                       "IGV - Retiro de bienes"),
-    ("46111005", None,  "Puntos",                                       "Puntos y obsequios otorgados"),
-    ("10310004", "006", "Diners",                                       "Tarjetas Diners"),
-    ("10310017", "006", "Tarjeta de crédito o débito - Mercado Pago",   "Tarjetas Mercadopago"),
-    ("10310017", "001", "PagoEfectivo - Mercado Pago",                  "Tarjetas Mercadopago"),
-    ("10310006", "006", "Estilos",                                      "Tarjetas Estilos"),
-    ("10300004", None,  "Dep. bco. BCP - Activa",                       "Efectivo Activa"),
-    ("10310005", "006", "Tarjetas Openpay",                             "Tarjetas Openpay"),
+_TIPO_PAGO_MAP: list[tuple[str | None, str | None, str, str, int | None]] = [
+    # (TransferAccount, U_SYP_MPPG, nombre, tipo, id_orders_payments_types)
+    # None en ta/mpg = campo vacío en la tabla → no se valida ese campo
+    # None en id = sin equivalencia en orders_payments_types
+    ("10310002", "005", "Visa (VisaNet)",                               "Tarjetas Visanet",              1),
+    ("10310002", "006", "Visa Crédito",                                 "Tarjetas Visanet",             23),
+    ("10310002", "005", "Visa Debito",                                  "Tarjetas Visanet",             24),
+    ("10310001", None,  "Mastercard (MC Peru)",                         "Tarjetas MCM",                  2),
+    ("10310001", "005", "Mastercard Crédito",                           "Tarjetas MCM",                 25),
+    ("10310001", "006", "Mastercard Débito",                            "Tarjetas MCM",                 26),
+    ("10310003", "006", "Amex (Expressnet)",                            "Tarjetas Expressnet",           3),
+    ("10310020", "003", "Tarjeta de crédito o débito, Yape, Plin - Izipay", "Pago Izipay",             34),
+    ("10310020", None,  "Tarjeta de crédito o débito - Izipay",         "Pago Izipay",                  33),
+    ("10300003", "001", "Dep. bco. BCP",                                "Deposito BCP",                 12),
+    ("10300006", None,  "Dep. bco. Scotiabank",                         "Deposito Scotiabank",          13),
+    ("10300007", None,  "Dep. bco. Interbank",                          "Deposito Interbank",           14),
+    ("10300008", None,  "Dep. bco. BBVA",                               "Deposito BBVA",                15),
+    (None,       "008", "Soles",                                       "Caja Tda",                   16),
+    (None,       "008", "Dólares",                                     "Caja Tda",                   17),    
+    ("46111004", "001", "Monedero",                                     "Cuentas por pagar - saldo",    18),
+    ("46111004", "004", "RMA",                                          "Cuentas por pagar - saldo",    19),
+    ("64111001", None,  "Transferencia Gratuita",                       "IGV - Retiro de bienes",       21),
+    ("46111005", None,  "Puntos",                                       "Puntos y obsequios otorgados", 22),
+    ("10310004", "006", "Diners",                                       "Tarjetas Diners",              28),
+    ("10310017", "006", "Tarjeta de crédito o débito - Mercado Pago",   "Tarjetas Mercadopago",          9),
+    ("10310017", "001", "PagoEfectivo - Mercado Pago",                  "Tarjetas Mercadopago",         10),
+    ("10310006", "006", "Estilos",                                      "Tarjetas Estilos",             30),
+    ("10300004", None,  "Dep. bco. BCP - Activa",                       "Efectivo Activa",              31),
+    ("10310005", "006", "Tarjetas Openpay",                             "Tarjetas Openpay",             58),
+]
+
+
+_ENVIO_PAGO_OPTIONS: list[dict] = [
+    {"nombre": nombre, "tipo": tipo, "ta": ta or "", "mpg": mpg or "", "id_opt": id_opt}
+    for ta, mpg, nombre, tipo, id_opt in _TIPO_PAGO_MAP
 ]
 
 
 def _determinar_tipo_pago(transfer_account: Any, u_syp_mppg: Any) -> tuple[str, str]:
     ta = str(transfer_account or "").strip()
     mpg = str(u_syp_mppg or "").strip()
-    for rule_ta, rule_mpg, nombre, tipo in _TIPO_PAGO_MAP:
+    for rule_ta, rule_mpg, nombre, tipo, _id in _TIPO_PAGO_MAP:
         if rule_ta is not None and ta != rule_ta:
             continue
         if rule_mpg is not None and mpg != rule_mpg:
