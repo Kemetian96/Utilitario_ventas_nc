@@ -382,7 +382,7 @@
         </div>
         <nav class="nav">
           {% for module in modules if module.sidebar %}
-            <a href="{{ module.url }}" class="{% if current_page == module.page %}active{% endif %}">
+            <a href="{{ module.url }}" class="{% if sidebar_page == module.page %}active{% endif %}">
               <strong>{{ module.title }}</strong>
               <span>{{ module.subtitle }}</span>
             </a>

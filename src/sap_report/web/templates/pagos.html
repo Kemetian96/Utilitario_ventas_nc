@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Pagos | SAP Web{% endblock %}
+
+{% block content %}
+  <style>
+    .pagos-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+      margin-top: 4px;
+    }
+
+    .pagos-card {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 20px 22px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+      cursor: pointer;
+      transition: border-color 120ms, background 120ms;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .pagos-card:hover {
+      border-color: rgba(124, 156, 255, 0.35);
+      background: rgba(124, 156, 255, 0.05);
+    }
+
+    .pagos-card strong {
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .pagos-card span {
+      font-size: 0.78rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .pagos-icon {
+      font-size: 1.3rem;
+      margin-bottom: 4px;
+    }
+  </style>
+
+  <section class="panel">
+    <span class="section-label">Módulo de Pagos</span>
+    <div class="pagos-grid">
+
+      <a class="pagos-card" href="/validar-pagos">
+        <div class="pagos-icon">&#10003;</div>
+        <strong>Validar pagos</strong>
+        <span>Comparación SAP vs TUTATI por fecha y tipo de pago.</span>
+      </a>
+
+      <a class="pagos-card" href="/consultar-pago-sap">
+        <div class="pagos-icon">&#128269;</div>
+        <strong>Consultar pago SAP</strong>
+        <span>Detalle y anulación de pagos por orden web en SAP.</span>
+      </a>
+
+      <a class="pagos-card" href="/enviar-pago-sap">
+        <div class="pagos-icon">&#8593;</div>
+        <strong>Envío de pago SAP</strong>
+        <span>Construye y envía el JSON de pago a SAP B1.</span>
+      </a>
+
+    </div>
+  </section>
+{% endblock %}

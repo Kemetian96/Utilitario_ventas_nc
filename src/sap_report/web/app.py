@@ -80,25 +80,32 @@ MODULES = [
         "sidebar": True,
     },
     {
+        "page": "pagos",
+        "title": "Pagos",
+        "subtitle": "Validar, consultar y enviar pagos.",
+        "url": "/pagos",
+        "sidebar": True,
+    },
+    {
         "page": "validar-pagos",
         "title": "Validar pagos",
         "subtitle": "Comparación SAP vs TUTATI.",
         "url": "/validar-pagos",
-        "sidebar": True,
+        "sidebar": False,
     },
     {
         "page": "consultar-pago-sap",
         "title": "Consultar pago SAP",
         "subtitle": "Detalle de pago por orden web.",
         "url": "/consultar-pago-sap",
-        "sidebar": True,
+        "sidebar": False,
     },
     {
         "page": "enviar-pago-sap",
         "title": "Envío de pago SAP",
         "subtitle": "Construye el JSON de pago para SAP B1.",
         "url": "/enviar-pago-sap",
-        "sidebar": True,
+        "sidebar": False,
     },
     {
         "page": "validacion-nubefact",
@@ -129,9 +136,11 @@ def create_app() -> Flask:
         else:
             current_page = request.endpoint.replace("_", "-")
         current_module = _get_current_module(current_page)
+        sidebar_page = "pagos" if current_page in _PAGOS_SUBPAGES else current_page
         return {
             "modules": MODULES,
             "current_module": current_module,
+            "sidebar_page": sidebar_page,
         }
 
     @app.get("/")
@@ -339,6 +348,10 @@ def create_app() -> Flask:
             cols=cols,
             error=error,
         )
+
+    @app.get("/pagos")
+    def pagos() -> str:
+        return render_template("pagos.html")
 
     @app.route("/validar-pagos", methods=["GET", "POST"])
     def validar_pagos() -> str:
@@ -773,6 +786,9 @@ def _build_downloads(settings) -> list[dict[str, str]]:
             "url": url_for("descargar_archivo", kind="comparacion"),
         },
     ]
+
+
+_PAGOS_SUBPAGES = frozenset({"validar-pagos", "consultar-pago-sap", "enviar-pago-sap"})
 
 
 def _get_current_module(current_page: str) -> dict[str, str]:
