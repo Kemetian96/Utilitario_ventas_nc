@@ -1,4 +1,4 @@
-from sap_report.main import main
+from sap_report.web.app import main
 
 
 if __name__ == "__main__":

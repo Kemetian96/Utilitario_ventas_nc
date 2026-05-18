@@ -1,4 +1,6 @@
-SELECT t1.uid_orders
+SELECT
+    t1.uid_orders,
+    CONVERT_TZ(CUID_TO_DATETIME(t1.cuid_documented), 'UTC', '-5:00') AS fecha
 FROM main.t_orders t1
 LEFT JOIN main.t_documents_movements_items t2
     ON t2.id_document = t1.id_orders

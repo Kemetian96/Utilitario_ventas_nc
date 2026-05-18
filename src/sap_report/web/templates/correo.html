@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Correo | SAP Web{% endblock %}
+
+{% block content %}
+  <style>
+    .content { max-width: 620px; }
+
+    .plantilla-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 4px;
+    }
+    .plantilla-opt {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--panel);
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .plantilla-opt:hover { border-color: var(--accent); }
+    .plantilla-opt input { accent-color: var(--accent); }
+    .plantilla-opt strong { font-size: 0.9rem; font-weight: 600; }
+  </style>
+
+  <section class="panel">
+    <form method="post"
+          data-loading-text="Enviando correo…"
+          onsubmit="return confirm('¿Confirmas el envío del correo?')">
+      <span class="section-label">Plantilla</span>
+      <div class="plantilla-list">
+        {% for p in plantillas %}
+          <label class="plantilla-opt">
+            <input type="radio" name="template_id" value="{{ p.id }}"
+                   {% if template_id == p.id %}checked{% endif %} required>
+            <strong>{{ p.nombre }}</strong>
+          </label>
+        {% endfor %}
+      </div>
+
+      <div class="form-grid" style="margin-top:16px;">
+        <div class="field">
+          <label for="fecha">Fecha (va en asunto y cuerpo)</label>
+          <input id="fecha" name="fecha" type="date" value="{{ fecha_value }}" required>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="button" type="submit">Enviar correo</button>
+      </div>
+    </form>
+
+    {% if success %}<div class="alert ok">{{ success }}</div>{% endif %}
+    {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  </section>
+{% endblock %}

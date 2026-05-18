@@ -14,14 +14,12 @@ dependencies = [
   "psycopg2-binary",
   "hdbcli",
   "pymysql",
-  "xlwt",
   "python-dotenv",
-  "tkcalendar",
+  "requests",
 ]
 
 [project.scripts]
-sap-report = "sap_report.main:main"
-sap-report-web = "sap_report.web.app:main"
+sap-report = "sap_report.web.app:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -4,100 +4,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from dotenv import load_dotenv, dotenv_values
+from dotenv import load_dotenv
 
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 ENV_PATH = ROOT_DIR / ".env"
-
-ENV_PROMPT_FIELDS = [
-    {
-        "keys": ["DB_HOST", "PG_HOST"],
-        "label": "DB_HOST (PostgreSQL)",
-        "secret": False,
-    },
-    {
-        "keys": ["DB_NAME", "PG_NAME"],
-        "label": "DB_NAME (PostgreSQL)",
-        "secret": False,
-    },
-    {
-        "keys": ["DB_USER", "PG_USER"],
-        "label": "DB_USER (PostgreSQL)",
-        "secret": False,
-    },
-    {
-        "keys": ["DB_PASSWORD", "PG_PASSWORD"],
-        "label": "DB_PASSWORD (PostgreSQL)",
-        "secret": True,
-    },
-    {
-        "keys": ["SAP_HANA_HOST"],
-        "label": "SAP_HANA_HOST",
-        "secret": False,
-    },
-    {
-        "keys": ["SAP_HANA_USER"],
-        "label": "SAP_HANA_USER",
-        "secret": False,
-    },
-    {
-        "keys": ["SAP_HANA_PASSWORD"],
-        "label": "SAP_HANA_PASSWORD",
-        "secret": True,
-    },
-    {
-        "keys": ["MYSQL_HOST"],
-        "label": "MYSQL_HOST",
-        "secret": False,
-    },
-    {
-        "keys": ["MYSQL_NAME"],
-        "label": "MYSQL_NAME",
-        "secret": False,
-    },
-    {
-        "keys": ["MYSQL_USER"],
-        "label": "MYSQL_USER",
-        "secret": False,
-    },
-    {
-        "keys": ["MYSQL_PASSWORD"],
-        "label": "MYSQL_PASSWORD",
-        "secret": True,
-    },
-]
-
-
-def _is_placeholder(value: str) -> bool:
-    # Detecta valores tipo "????".
-    stripped = value.strip()
-    return bool(stripped) and all(ch == "?" for ch in stripped)
-
-
-def get_missing_env_fields() -> list[dict[str, object]]:
-    # Devuelve campos a solicitar si faltan o son placeholders.
-    env_file = dotenv_values(ENV_PATH) if ENV_PATH.exists() else {}
-    missing: list[dict[str, object]] = []
-    for field in ENV_PROMPT_FIELDS:
-        keys = field["keys"]
-        value = None
-        for key in keys:
-            if os.getenv(key):
-                value = os.getenv(key)
-                break
-            if key in env_file and env_file[key] is not None:
-                value = env_file[key]
-                break
-        if value is None or _is_placeholder(str(value)):
-            missing.append(
-                {
-                    "key": keys[0],
-                    "label": field["label"],
-                    "secret": field["secret"],
-                }
-            )
-    return missing
 
 
 def _get_env(name: str, default: str | None = None) -> str:
@@ -182,6 +93,13 @@ class Settings:
     sl_company_db: str
     sl_user: str
     sl_password: str
+    # Correo SMTP
+    smtp_host: str
+    smtp_port: int
+    smtp_user: Optional[str]
+    smtp_password: Optional[str]
+    smtp_from: Optional[str]
+    smtp_override_to: Optional[str]
     # Parametros generales
     reintentos: int
     espera_segundos: int
@@ -226,6 +144,12 @@ def load_settings() -> Settings:
         sl_company_db=_get_env("SL_COMPANY_DB", "B1H_COMERCIALMONT_PROD"),
         sl_user=_get_env("SL_USER", ""),
         sl_password=_get_env("SL_PASSWORD", ""),
+        smtp_host=_get_env("SMTP_HOST", "smtp.gmail.com"),
+        smtp_port=int(_get_env("SMTP_PORT", "587")),
+        smtp_user=_get_optional_env("SMTP_USER"),
+        smtp_password=_get_optional_env("SMTP_PASSWORD"),
+        smtp_from=_get_optional_env("SMTP_FROM"),
+        smtp_override_to=_get_optional_env("SMTP_OVERRIDE_TO"),
         reintentos=int(_get_env("REINTENTOS_CONEXION", "5")),
         espera_segundos=int(_get_env("ESPERA_REINTENTO_SEGUNDOS", "10")),
         ui_width=int(_get_env("UI_WIDTH", "360")),

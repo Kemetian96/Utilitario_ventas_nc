@@ -44,6 +44,8 @@
                 type="submit" name="tipo" value="pendientes">Pendientes</button>
         <button class="button {{ '' if tipo_value == 'ventas_nc' and rows is not none else 'ghost' }}"
                 type="submit" name="tipo" value="ventas_nc">Ventas y Nc</button>
+        <button class="button {{ '' if tipo_value == 'venta_doble' and rows is not none else 'ghost' }}"
+                type="submit" name="tipo" value="venta_doble">Venta Doble</button>
       </div>
     </form>
 
@@ -61,6 +63,7 @@
       <span class="section-label">
         {% if tipo_value == 'anuladas' %}Anuladas
         {% elif tipo_value == 'pendientes' %}Pendientes
+        {% elif tipo_value == 'venta_doble' %}Venta Doble
         {% else %}Ventas y Nc
         {% endif %}
         | {{ fecha_inicio_value }} -> {{ fecha_fin_value }}
@@ -115,6 +118,18 @@
                       {% else %}
                         <span class="section-label" style="margin-bottom: 0;">Enviado</span>
                       {% endif %}
+                    </td>
+                  {% elif tipo_value == 'venta_doble' %}
+                    <td>
+                      <form method="post" data-loading-text="Creando movimiento...">
+                        <input type="hidden" name="accion" value="enviar_pendiente">
+                        <input type="hidden" name="uid" value="{{ row[1] }}">
+                        <input type="hidden" name="tipo_pendiente" value="{{ row[0] }}">
+                        <input type="hidden" name="fecha_inicio" value="{{ fecha_inicio_value }}">
+                        <input type="hidden" name="fecha_fin" value="{{ fecha_fin_value }}">
+                        <input type="hidden" name="tipo" value="{{ tipo_value }}">
+                        <button class="button ghost inline-small" type="submit">Enviar</button>
+                      </form>
                     </td>
                   {% endif %}
                 </tr>

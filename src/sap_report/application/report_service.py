@@ -7,8 +7,10 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from sap_report.application.email_templates import construir_correo
 from sap_report.domain import cuid_a_fecha, fecha_a_cuid
 from sap_report.infrastructure.db import MySQLRepository, PostgresRepository, SapHanaRepository, SapServiceLayerRepository
+from sap_report.infrastructure.email import SmtpMailer
 from sap_report.infrastructure.export import (
     exportar_comparacion,
     exportar_excel,
@@ -26,6 +28,7 @@ class ReportService:
         postgres_repository: PostgresRepository,
         mysql_repository: MySQLRepository,
         sl_repository: SapServiceLayerRepository,
+        mailer: SmtpMailer,
         sap_output_path: Path,
         postgres_output_path: Path,
         comparacion_output_path: Path,
@@ -35,6 +38,7 @@ class ReportService:
         self._postgres_repository = postgres_repository
         self._mysql_repository = mysql_repository
         self._sl_repository = sl_repository
+        self._mailer = mailer
         self._sap_output_path = sap_output_path
         self._postgres_output_path = postgres_output_path
         self._comparacion_output_path = comparacion_output_path
@@ -231,8 +235,6 @@ class ReportService:
                 "upd_comercial": 0,
                 "upd_pedral": 0,
                 "upd_hilos": 0,
-                "sp_orders": 0,
-                "sp_rmas": 0,
                 "docentries": [],
             }
 
@@ -262,8 +264,6 @@ class ReportService:
                 "upd_comercial": 0,
                 "upd_pedral": 0,
                 "upd_hilos": upd_hilos,
-                "sp_orders": 0,
-                "sp_rmas": 0,
                 "docentries": docentries_out,
             }
 
@@ -279,8 +279,6 @@ class ReportService:
                 "upd_comercial": 0,
                 "upd_pedral": 0,
                 "upd_hilos": upd_hilos,
-                "sp_orders": 0,
-                "sp_rmas": 0,
                 "docentries": docentries_out,
             }
 
@@ -300,23 +298,6 @@ class ReportService:
         upd_comercial = self._sap_repository.ejecutar_actualizar_igv_comercial(items_igv)
         upd_pedral = self._sap_repository.ejecutar_actualizar_igv_pedral(items_igv)
 
-        # Ejecuta creacion de movimientos en MySQL para ultimos 3 dias.
-        cuid_inicio = fecha_a_cuid(datetime.combine(hoy - timedelta(days=3), datetime.min.time()))
-        cuid_fin = fecha_a_cuid(datetime.combine(hoy, datetime.min.time()))
-        if status_cb:
-            status_cb("Buscando UID_ORDERS pendientes...")
-        uid_orders = self._mysql_repository.obtener_uid_orders_pendientes(cuid_inicio, cuid_fin)
-        if status_cb:
-            status_cb(f"Ejecutando SP ORDER: {len(uid_orders)}")
-        ok_orders = self._mysql_repository.ejecutar_sp_create_document_movement(uid_orders, "ORDER")
-
-        if status_cb:
-            status_cb("Buscando UID_RMAS pendientes...")
-        uid_rmas = self._mysql_repository.obtener_uid_rmas_pendientes(cuid_inicio, cuid_fin)
-        if status_cb:
-            status_cb(f"Ejecutando SP RMA: {len(uid_rmas)}")
-        ok_rmas = self._mysql_repository.ejecutar_sp_create_document_movement(uid_rmas, "RMA")
-
         if docentries_out:
             if status_cb:
                 status_cb(f"Actualizando Hilos en SAP: {len(docentries_out)} DocEntry")
@@ -329,8 +310,6 @@ class ReportService:
             "upd_comercial": upd_comercial,
             "upd_pedral": upd_pedral,
             "upd_hilos": upd_hilos,
-            "sp_orders": ok_orders,
-            "sp_rmas": ok_rmas,
             "docentries": docentries_out,
         }
 
@@ -468,6 +447,41 @@ class ReportService:
         cuid_inicio = fecha_a_cuid(datetime.combine(fecha_inicio, datetime_time.min))
         cuid_fin = fecha_a_cuid(datetime.combine(fecha_fin, datetime_time(23, 59, 59)))
         return self._mysql_repository.ejecutar_por_enviar(cuid_inicio, cuid_fin, tipo)
+
+    def consultar_venta_doble(
+        self,
+        fecha_inicio: date,
+        fecha_fin: date,
+    ) -> tuple[list[tuple[Any, ...]], list[str]]:
+        cuid_inicio = fecha_a_cuid(datetime.combine(fecha_inicio, datetime_time.min))
+        cuid_fin = fecha_a_cuid(datetime.combine(fecha_fin, datetime_time(23, 59, 59)))
+        return self._mysql_repository.obtener_pendientes_venta_doble(cuid_inicio, cuid_fin)
+
+    def listar_plantillas_correo(self) -> list[dict[str, str]]:
+        from sap_report.application.email_templates import EMAIL_TEMPLATES
+
+        return [{"id": t["id"], "nombre": t["nombre"]} for t in EMAIL_TEMPLATES]
+
+    def enviar_correo(self, template_id: str, fecha: date) -> str:
+        fecha_str = fecha.strftime("%d/%m/%Y")
+        correo = construir_correo(template_id, fecha_str)
+        self._mailer.send(
+            to=correo["to"],
+            subject=correo["asunto"],
+            body=correo["cuerpo"],
+            cc=correo["cc"],
+            html=correo["cuerpo_html"],
+        )
+        return f"Correo «{correo['asunto']}» enviado correctamente."
+
+    def enviar_venta_doble(self, uid: str, tipo: str) -> int:
+        uid = uid.strip()
+        tipo = tipo.strip().upper()
+        if not uid:
+            raise ValueError("UID vacío.")
+        if tipo not in ("ORDER", "RMA"):
+            raise ValueError(f"Tipo inválido para venta doble: {tipo!r}")
+        return self._mysql_repository.ejecutar_sp_create_document_movement([uid], tipo)
 
     def enviar_movimiento_por_enviar(self, id_movement: int) -> str:
         if id_movement <= 0:

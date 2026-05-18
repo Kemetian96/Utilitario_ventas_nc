@@ -115,6 +115,13 @@ MODULES = [
         "sidebar": True,
     },
     {
+        "page": "correo",
+        "title": "Correo",
+        "subtitle": "Envío de correos predeterminados.",
+        "url": "/correo",
+        "sidebar": True,
+    },
+    {
         "page": "revisar-hilos",
         "title": "Revisar hilos",
         "subtitle": "Consulta rápida de pendientes.",
@@ -413,11 +420,26 @@ def create_app() -> Flask:
                         raise ValueError("Id_movement invalido.")
                     sp_msg = service.enviar_movimiento_por_enviar(int(id_movement_raw))
                     success = sp_msg or f"Movimiento {id_movement_raw} enviado correctamente."
-                rows, cols = service.consultar_por_enviar(
-                    fecha_inicio=_parse_date(fecha_inicio_value),
-                    fecha_fin=_parse_date(fecha_fin_value),
-                    tipo=tipo_value,
-                )
+                elif accion == "enviar_pendiente":
+                    uid = request.form.get("uid", "").strip()
+                    tipo_pendiente = request.form.get("tipo_pendiente", "").strip()
+                    ok = service.enviar_venta_doble(uid, tipo_pendiente)
+                    if ok > 0:
+                        success = f"Movimiento creado para {tipo_pendiente} {uid}."
+                    else:
+                        error = f"No se pudo crear el movimiento para {tipo_pendiente} {uid}."
+
+                if tipo_value == "venta_doble":
+                    rows, cols = service.consultar_venta_doble(
+                        fecha_inicio=_parse_date(fecha_inicio_value),
+                        fecha_fin=_parse_date(fecha_fin_value),
+                    )
+                else:
+                    rows, cols = service.consultar_por_enviar(
+                        fecha_inicio=_parse_date(fecha_inicio_value),
+                        fecha_fin=_parse_date(fecha_fin_value),
+                        tipo=tipo_value,
+                    )
             except Exception as exc:
                 error = str(exc)
 
@@ -712,6 +734,34 @@ def create_app() -> Flask:
             error=error,
             success=success,
             pagos_candidatos=None,
+        )
+
+    @app.route("/correo", methods=["GET", "POST"])
+    def correo() -> str:
+        fecha_value = settings.fecha_fin_default[:10]
+        plantillas = service.listar_plantillas_correo()
+        template_id = ""
+        success: str | None = None
+        error: str | None = None
+
+        if request.method == "POST":
+            fecha_value = request.form.get("fecha", fecha_value).strip()
+            template_id = request.form.get("template_id", "").strip()
+            try:
+                if not template_id:
+                    raise ValueError("Selecciona una plantilla de correo.")
+                success = service.enviar_correo(template_id, _parse_date(fecha_value))
+            except Exception as exc:
+                error = str(exc)
+
+        return render_template(
+            "correo.html",
+            current_page="correo",
+            fecha_value=fecha_value,
+            plantillas=plantillas,
+            template_id=template_id,
+            success=success,
+            error=error,
         )
 
     @app.get("/validacion-nubefact")
