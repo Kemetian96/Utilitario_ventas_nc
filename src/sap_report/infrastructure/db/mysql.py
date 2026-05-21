@@ -25,6 +25,8 @@ VALIDAR_PAGOS_PATH = _QUERIES_DIR / "validar_pagos.sql"
 POR_ENVIAR_PATH = _QUERIES_DIR / "por_enviar.sql"
 ANULAR_MOVIMIENTO_PATH = _QUERIES_DIR / "anular_movimiento_por_enviar.sql"
 ENVIAR_MOVIMIENTO_PATH = _QUERIES_DIR / "enviar_movimiento_por_enviar.sql"
+VALIDAR_OUTBOUND_PATH = _QUERIES_DIR / "validar_outbound.sql"
+VALIDAR_INBOUND_PATH = _QUERIES_DIR / "validar_inbound.sql"
 
 
 class MySQLRepository:
@@ -54,6 +56,8 @@ class MySQLRepository:
         self._query_por_enviar = POR_ENVIAR_PATH.read_text(encoding="utf-8")
         self._query_anular_movimiento = ANULAR_MOVIMIENTO_PATH.read_text(encoding="utf-8")
         self._query_enviar_movimiento = ENVIAR_MOVIMIENTO_PATH.read_text(encoding="utf-8")
+        self._query_validar_outbound = VALIDAR_OUTBOUND_PATH.read_text(encoding="utf-8")
+        self._query_validar_inbound = VALIDAR_INBOUND_PATH.read_text(encoding="utf-8")
 
     def probar_conexion(self) -> None:
         conn = self._connect()
@@ -96,6 +100,26 @@ class MySQLRepository:
                     conn.close()
 
         raise RuntimeError("No se pudo ejecutar la consulta MySQL tras todos los reintentos.")
+
+    def consultar_items_outbound(
+        self,
+        ids: list[int],
+    ) -> tuple[list[tuple[Any, ...]], list[str]]:
+        if not ids:
+            return [], ["articulo", "centro", "cantidad"]
+        ids_in = ", ".join(str(int(i)) for i in ids)
+        sql = self._query_validar_outbound.replace("{{id_outbounds_in}}", ids_in)
+        return self.ejecutar_sql(sql)
+
+    def consultar_items_inbound(
+        self,
+        ids: list[int],
+    ) -> tuple[list[tuple[Any, ...]], list[str]]:
+        if not ids:
+            return [], ["articulo", "centro", "cantidad"]
+        ids_in = ", ".join(str(int(i)) for i in ids)
+        sql = self._query_validar_inbound.replace("{{id_inbounds_in}}", ids_in)
+        return self.ejecutar_sql(sql)
 
     def consultar_eid_tienda(self, id_store: int) -> str | None:
         return self._consultar_campo_tienda("eid", id_store)

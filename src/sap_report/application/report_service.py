@@ -483,6 +483,81 @@ class ReportService:
             raise ValueError(f"Tipo inválido para venta doble: {tipo!r}")
         return self._mysql_repository.ejecutar_sp_create_document_movement([uid], tipo)
 
+    def validar_movimiento(self, id_document: int, tipo: str) -> dict[str, Any]:
+        if id_document <= 0:
+            raise ValueError("id_document inválido.")
+        tipo = tipo.strip()
+        providers = {
+            "id_Outbound": self._mysql_repository.consultar_items_outbound,
+            "id_Inbound": self._mysql_repository.consultar_items_inbound,
+        }
+        provider = providers.get(tipo)
+        if provider is None:
+            raise ValueError(f"Tipo no soportado para validar: {tipo!r}")
+        rows, _ = provider([id_document])
+        return self._comparar_items_contra_stock(id_document, tipo, rows)
+
+    def _comparar_items_contra_stock(
+        self,
+        id_document: int,
+        tipo: str,
+        mysql_rows: list[tuple[Any, ...]],
+    ) -> dict[str, Any]:
+        result = {
+            "tipo": tipo,
+            "id_document": id_document,
+            "items_total": len(mysql_rows),
+            "faltantes": [],
+        }
+        if not mysql_rows:
+            return result
+
+        mysql_items: list[dict[str, Any]] = []
+        articulos: set[str] = set()
+        centros: set[str] = set()
+        for row in mysql_rows:
+            articulo = str(row[0]).strip() if row[0] is not None else ""
+            centro = str(row[1]).strip() if row[1] is not None else ""
+            if not articulo or not centro:
+                continue
+            cantidad = _to_float(row[2])
+            mysql_items.append({"articulo": articulo, "centro": centro, "cantidad": cantidad})
+            articulos.add(articulo)
+            centros.add(centro)
+
+        if not articulos or not centros:
+            return result
+
+        sap_rows, sap_cols = self._sap_repository.ejecutar_prestamo_stock(
+            sorted(articulos), sorted(centros)
+        )
+        idx_iw = _find_col_index(sap_cols, ["itemwarehouse"])
+        idx_stock = _find_col_index(sap_cols, ["stock"])
+        sap_map: dict[str, float] = {}
+        for row in sap_rows:
+            key = str(row[idx_iw]).strip() if row[idx_iw] is not None else ""
+            if not key:
+                continue
+            sap_map[key] = _to_float(row[idx_stock])
+
+        faltantes: list[dict[str, Any]] = []
+        for item in mysql_items:
+            key = f"{item['articulo']}{item['centro']}"
+            stock = sap_map.get(key, 0.0)
+            diff = item["cantidad"] - stock
+            if diff > 0:
+                faltantes.append(
+                    {
+                        "articulo": item["articulo"],
+                        "centro": item["centro"],
+                        "cantidad_mysql": item["cantidad"],
+                        "stock_sap": stock,
+                        "diferencia": diff,
+                    }
+                )
+        result["faltantes"] = faltantes
+        return result
+
     def enviar_movimiento_por_enviar(self, id_movement: int) -> str:
         if id_movement <= 0:
             raise ValueError("Id_movement invalido.")

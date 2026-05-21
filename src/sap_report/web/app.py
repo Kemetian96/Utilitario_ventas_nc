@@ -398,6 +398,7 @@ def create_app() -> Flask:
         cols: list[str] | None = None
         success: str | None = None
         error: str | None = None
+        validacion: dict[str, Any] | None = None
 
         if request.method == "POST":
             fecha_inicio_value = request.form.get("fecha_inicio", fecha_inicio_value).strip()
@@ -405,7 +406,13 @@ def create_app() -> Flask:
             tipo_value = request.form.get("tipo", tipo_value).strip()
             try:
                 accion = request.form.get("accion", "consultar").strip()
-                if accion == "anular":
+                if accion == "validar":
+                    id_document_raw = request.form.get("id_document", "").strip()
+                    tipo_movimiento = request.form.get("tipo_movimiento", "").strip()
+                    if not id_document_raw.isdigit():
+                        raise ValueError("id_document inválido.")
+                    validacion = service.validar_movimiento(int(id_document_raw), tipo_movimiento)
+                elif accion == "anular":
                     id_movement_raw = request.form.get("id_movement", "").strip()
                     if not id_movement_raw.isdigit():
                         raise ValueError("Id_movement invalido.")
@@ -453,6 +460,7 @@ def create_app() -> Flask:
             cols=cols,
             success=success,
             error=error,
+            validacion=validacion,
         )
 
     @app.route("/consultar-pago-sap", methods=["GET", "POST"])
