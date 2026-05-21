@@ -15,16 +15,16 @@ from ._base import _render_in_list
 
 LOGGER = logging.getLogger(__name__)
 
-_QUERIES_DIR = Path(__file__).resolve().parent / "queries"
+_QUERIES_DIR = Path(__file__).resolve().parent / "queries" / "mysql"
 
-MYSQL_VALIDAR_IGV_DOCS_PATH = _QUERIES_DIR / "validar_igv_mysql_docs.sql"
-MYSQL_VALIDAR_IGV_ITEMS_PATH = _QUERIES_DIR / "validar_igv_mysql_items.sql"
-MYSQL_VALIDAR_IGV_PEND_ORDERS_PATH = _QUERIES_DIR / "validar_igv_mysql_pendientes_orders.sql"
-MYSQL_VALIDAR_IGV_PEND_RMAS_PATH = _QUERIES_DIR / "validar_igv_mysql_pendientes_rmas.sql"
-MYSQL_VALIDAR_PAGOS_PATH = _QUERIES_DIR / "Validar_pagos_tutati.sql"
-MYSQL_POR_ENVIAR_PATH = _QUERIES_DIR / "PorEnviar.sql"
-MYSQL_ANULAR_MOVIMIENTO_PATH = _QUERIES_DIR / "anular_movimiento_por_enviar.sql"
-MYSQL_ENVIAR_MOVIMIENTO_PATH = _QUERIES_DIR / "enviar_movimiento_por_enviar.sql"
+VALIDAR_IGV_DOCUMENTOS_PATH = _QUERIES_DIR / "validar_igv_documentos.sql"
+VALIDAR_IGV_ITEMS_PATH = _QUERIES_DIR / "validar_igv_items.sql"
+PENDIENTES_ORDERS_PATH = _QUERIES_DIR / "pendientes_orders.sql"
+PENDIENTES_RMAS_PATH = _QUERIES_DIR / "pendientes_rmas.sql"
+VALIDAR_PAGOS_PATH = _QUERIES_DIR / "validar_pagos.sql"
+POR_ENVIAR_PATH = _QUERIES_DIR / "por_enviar.sql"
+ANULAR_MOVIMIENTO_PATH = _QUERIES_DIR / "anular_movimiento_por_enviar.sql"
+ENVIAR_MOVIMIENTO_PATH = _QUERIES_DIR / "enviar_movimiento_por_enviar.sql"
 
 
 class MySQLRepository:
@@ -46,14 +46,14 @@ class MySQLRepository:
         self._mysql_password = settings.mysql_password
         self._mysql_port = settings.mysql_port or 3306
         self._mysql_connect_timeout = settings.mysql_connect_timeout or 10
-        self._query_validar_igv_docs = MYSQL_VALIDAR_IGV_DOCS_PATH.read_text(encoding="utf-8")
-        self._query_validar_igv_items = MYSQL_VALIDAR_IGV_ITEMS_PATH.read_text(encoding="utf-8")
-        self._query_validar_igv_pend_orders = MYSQL_VALIDAR_IGV_PEND_ORDERS_PATH.read_text(encoding="utf-8")
-        self._query_validar_igv_pend_rmas = MYSQL_VALIDAR_IGV_PEND_RMAS_PATH.read_text(encoding="utf-8")
-        self._query_validar_pagos = MYSQL_VALIDAR_PAGOS_PATH.read_text(encoding="utf-8")
-        self._query_por_enviar = MYSQL_POR_ENVIAR_PATH.read_text(encoding="utf-8")
-        self._query_anular_movimiento = MYSQL_ANULAR_MOVIMIENTO_PATH.read_text(encoding="utf-8")
-        self._query_enviar_movimiento = MYSQL_ENVIAR_MOVIMIENTO_PATH.read_text(encoding="utf-8")
+        self._query_validar_igv_documentos = VALIDAR_IGV_DOCUMENTOS_PATH.read_text(encoding="utf-8")
+        self._query_validar_igv_items = VALIDAR_IGV_ITEMS_PATH.read_text(encoding="utf-8")
+        self._query_pendientes_orders = PENDIENTES_ORDERS_PATH.read_text(encoding="utf-8")
+        self._query_pendientes_rmas = PENDIENTES_RMAS_PATH.read_text(encoding="utf-8")
+        self._query_validar_pagos = VALIDAR_PAGOS_PATH.read_text(encoding="utf-8")
+        self._query_por_enviar = POR_ENVIAR_PATH.read_text(encoding="utf-8")
+        self._query_anular_movimiento = ANULAR_MOVIMIENTO_PATH.read_text(encoding="utf-8")
+        self._query_enviar_movimiento = ENVIAR_MOVIMIENTO_PATH.read_text(encoding="utf-8")
 
     def probar_conexion(self) -> None:
         conn = self._connect()
@@ -110,7 +110,7 @@ class MySQLRepository:
         if not docentries:
             return [], ["id_document", "DocEntry"]
         doc_in = _render_in_list(docentries)
-        sql = self._query_validar_igv_docs.replace("{{docentries_in}}", doc_in)
+        sql = self._query_validar_igv_documentos.replace("{{docentries_in}}", doc_in)
         return self.ejecutar_sql(sql)
 
     def ejecutar_validar_igv_items(
@@ -131,8 +131,8 @@ class MySQLRepository:
         cols = ["Tipo", "UID", "Fecha"]
         rows: list[tuple[Any, ...]] = []
         for tipo, query in (
-            ("ORDER", self._query_validar_igv_pend_orders),
-            ("RMA", self._query_validar_igv_pend_rmas),
+            ("ORDER", self._query_pendientes_orders),
+            ("RMA", self._query_pendientes_rmas),
         ):
             sql = (
                 query

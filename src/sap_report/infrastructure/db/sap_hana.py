@@ -16,25 +16,25 @@ from ._base import _render_in_list
 
 LOGGER = logging.getLogger(__name__)
 
-_QUERIES_DIR = Path(__file__).resolve().parent / "queries"
+_QUERIES_DIR = Path(__file__).resolve().parent / "queries" / "hana"
 
-SAP_QUERY_PATH = _QUERIES_DIR / "SAP.sql"
-SAP_NC_QUERY_PATH = _QUERIES_DIR / "sap_nc.sql"
-SAP_VALIDAR_ARTICULOS_PATH = _QUERIES_DIR / "validar_articulos.sql"
-SAP_VALIDAR_IGV_PATH = _QUERIES_DIR / "validar_igv_sap.sql"
-SAP_VALIDAR_IGV_ITEMS_PATH = _QUERIES_DIR / "validar_igv_sap_items.sql"
-SAP_VALIDAR_IGV_UPDATE_COMERCIAL_PATH = _QUERIES_DIR / "validar_igv_update_comercial.sql"
-SAP_VALIDAR_IGV_UPDATE_PEDRAL_PATH = _QUERIES_DIR / "validar_igv_update_pedral.sql"
-SAP_VALIDAR_IGV_UPDATE_HILOS_PATH = _QUERIES_DIR / "validar_igv_update_hilos.sql"
-SAP_REVISAR_HILOS_PATH = _QUERIES_DIR / "revisar_hilos.sql"
-SAP_PRESTAMO_STOCK_PATH = _QUERIES_DIR / "prestamo_stock.sql"
-SAP_PRESTAMO_LOGPROCESO_PATH = _QUERIES_DIR / "prestamo_logproceso.sql"
-SAP_PRESTAMO_LOGPROCESO_DEV_PATH = _QUERIES_DIR / "prestamo_logproceso_dev.sql"
-SAP_PRESTAMO_TRANI_PATH = _QUERIES_DIR / "prestamo_trani.sql"
-SAP_VALIDACION_NC_PATH = _QUERIES_DIR / "ValidacionNC.sql"
-SAP_VALIDACION_NC_ARTICULOS_PATH = _QUERIES_DIR / "ValidacionNCArticulos.sql"
-SAP_VALIDAR_PAGOS_PATH = _QUERIES_DIR / "Validar_pagos_sap.sql"
-SAP_DATOS_FACTURA_PATH = _QUERIES_DIR / "datos_factura_sap.sql"
+REPORTE_VENTAS_PATH = _QUERIES_DIR / "reporte_ventas.sql"
+REPORTE_NOTAS_CREDITO_PATH = _QUERIES_DIR / "reporte_notas_credito.sql"
+VALIDAR_ARTICULOS_PATH = _QUERIES_DIR / "validar_articulos.sql"
+VALIDAR_IGV_DOCUMENTOS_PATH = _QUERIES_DIR / "validar_igv_documentos.sql"
+VALIDAR_IGV_ITEMS_PATH = _QUERIES_DIR / "validar_igv_items.sql"
+ACTUALIZAR_IGV_COMERCIAL_PATH = _QUERIES_DIR / "actualizar_igv_comercial.sql"
+ACTUALIZAR_IGV_PEDRAL_PATH = _QUERIES_DIR / "actualizar_igv_pedral.sql"
+ACTUALIZAR_IGV_HILOS_PATH = _QUERIES_DIR / "actualizar_igv_hilos.sql"
+REVISAR_HILOS_PATH = _QUERIES_DIR / "revisar_hilos.sql"
+PRESTAMO_STOCK_PATH = _QUERIES_DIR / "prestamo_stock.sql"
+PRESTAMO_LOGPROCESO_PATH = _QUERIES_DIR / "prestamo_logproceso.sql"
+PRESTAMO_LOGPROCESO_DEV_PATH = _QUERIES_DIR / "prestamo_logproceso_dev.sql"
+PRESTAMO_TRANI_PATH = _QUERIES_DIR / "prestamo_trani.sql"
+VALIDACION_NC_PATH = _QUERIES_DIR / "validacion_nc.sql"
+VALIDACION_NC_ARTICULOS_PATH = _QUERIES_DIR / "validacion_nc_articulos.sql"
+VALIDAR_PAGOS_PATH = _QUERIES_DIR / "validar_pagos.sql"
+DATOS_FACTURA_PATH = _QUERIES_DIR / "datos_factura.sql"
 
 
 class SapHanaRepository:
@@ -42,23 +42,23 @@ class SapHanaRepository:
         if dbapi is None:
             raise RuntimeError("Falta dependencia hdbcli. Instala con: pip install hdbcli")
         self._settings = settings
-        self._query_template = SAP_QUERY_PATH.read_text(encoding="utf-8")
-        self._query_nc_template = SAP_NC_QUERY_PATH.read_text(encoding="utf-8")
-        self._query_validar_articulos = SAP_VALIDAR_ARTICULOS_PATH.read_text(encoding="utf-8")
-        self._query_validar_igv = SAP_VALIDAR_IGV_PATH.read_text(encoding="utf-8")
-        self._query_validar_igv_items = SAP_VALIDAR_IGV_ITEMS_PATH.read_text(encoding="utf-8")
-        self._query_validar_igv_update_comercial = SAP_VALIDAR_IGV_UPDATE_COMERCIAL_PATH.read_text(encoding="utf-8")
-        self._query_validar_igv_update_pedral = SAP_VALIDAR_IGV_UPDATE_PEDRAL_PATH.read_text(encoding="utf-8")
-        self._query_validar_igv_update_hilos = SAP_VALIDAR_IGV_UPDATE_HILOS_PATH.read_text(encoding="utf-8")
-        self._query_revisar_hilos = SAP_REVISAR_HILOS_PATH.read_text(encoding="utf-8")
-        self._query_prestamo_stock = SAP_PRESTAMO_STOCK_PATH.read_text(encoding="utf-8")
-        self._query_prestamo_logproceso = SAP_PRESTAMO_LOGPROCESO_PATH.read_text(encoding="utf-8")
-        self._query_prestamo_logproceso_dev = SAP_PRESTAMO_LOGPROCESO_DEV_PATH.read_text(encoding="utf-8")
-        self._query_prestamo_trani = SAP_PRESTAMO_TRANI_PATH.read_text(encoding="utf-8")
-        self._query_validacion_nc = SAP_VALIDACION_NC_PATH.read_text(encoding="utf-8")
-        self._query_validacion_nc_articulos = SAP_VALIDACION_NC_ARTICULOS_PATH.read_text(encoding="utf-8")
-        self._query_validar_pagos = SAP_VALIDAR_PAGOS_PATH.read_text(encoding="utf-8")
-        self._query_datos_factura = SAP_DATOS_FACTURA_PATH.read_text(encoding="utf-8")
+        self._query_reporte_ventas = REPORTE_VENTAS_PATH.read_text(encoding="utf-8")
+        self._query_reporte_notas_credito = REPORTE_NOTAS_CREDITO_PATH.read_text(encoding="utf-8")
+        self._query_validar_articulos = VALIDAR_ARTICULOS_PATH.read_text(encoding="utf-8")
+        self._query_validar_igv_documentos = VALIDAR_IGV_DOCUMENTOS_PATH.read_text(encoding="utf-8")
+        self._query_validar_igv_items = VALIDAR_IGV_ITEMS_PATH.read_text(encoding="utf-8")
+        self._query_actualizar_igv_comercial = ACTUALIZAR_IGV_COMERCIAL_PATH.read_text(encoding="utf-8")
+        self._query_actualizar_igv_pedral = ACTUALIZAR_IGV_PEDRAL_PATH.read_text(encoding="utf-8")
+        self._query_actualizar_igv_hilos = ACTUALIZAR_IGV_HILOS_PATH.read_text(encoding="utf-8")
+        self._query_revisar_hilos = REVISAR_HILOS_PATH.read_text(encoding="utf-8")
+        self._query_prestamo_stock = PRESTAMO_STOCK_PATH.read_text(encoding="utf-8")
+        self._query_prestamo_logproceso = PRESTAMO_LOGPROCESO_PATH.read_text(encoding="utf-8")
+        self._query_prestamo_logproceso_dev = PRESTAMO_LOGPROCESO_DEV_PATH.read_text(encoding="utf-8")
+        self._query_prestamo_trani = PRESTAMO_TRANI_PATH.read_text(encoding="utf-8")
+        self._query_validacion_nc = VALIDACION_NC_PATH.read_text(encoding="utf-8")
+        self._query_validacion_nc_articulos = VALIDACION_NC_ARTICULOS_PATH.read_text(encoding="utf-8")
+        self._query_validar_pagos = VALIDAR_PAGOS_PATH.read_text(encoding="utf-8")
+        self._query_datos_factura = DATOS_FACTURA_PATH.read_text(encoding="utf-8")
 
     def ejecutar_consulta_sql(
         self,
@@ -73,7 +73,7 @@ class SapHanaRepository:
         fecha_inicio: date,
         fecha_fin: date,
     ) -> tuple[list[tuple[Any, ...]], list[str]]:
-        sql = self._render_query(fecha_inicio, fecha_fin, self._query_nc_template)
+        sql = self._render_query(fecha_inicio, fecha_fin, self._query_reporte_notas_credito)
         return self._ejecutar_sql(sql)
 
     def ejecutar_validar_articulos(
@@ -90,7 +90,7 @@ class SapHanaRepository:
         fecha_inicio: date,
         fecha_fin: date,
     ) -> tuple[list[tuple[Any, ...]], list[str]]:
-        sql = self._render_query(fecha_inicio, fecha_fin, self._query_validar_igv)
+        sql = self._render_query(fecha_inicio, fecha_fin, self._query_validar_igv_documentos)
         return self._ejecutar_sql(sql)
 
     def ejecutar_validar_igv_items(self, items: list[str]) -> list[str]:
@@ -105,21 +105,21 @@ class SapHanaRepository:
         if not items:
             return 0
         items_in = _render_in_list(items)
-        sql = self._query_validar_igv_update_comercial.replace("{{items_in}}", items_in)
+        sql = self._query_actualizar_igv_comercial.replace("{{items_in}}", items_in)
         return self._ejecutar_sql_modificacion(sql)
 
     def ejecutar_actualizar_igv_pedral(self, items: list[str]) -> int:
         if not items:
             return 0
         items_in = _render_in_list(items)
-        sql = self._query_validar_igv_update_pedral.replace("{{items_in}}", items_in)
+        sql = self._query_actualizar_igv_pedral.replace("{{items_in}}", items_in)
         return self._ejecutar_sql_modificacion(sql)
 
     def ejecutar_actualizar_igv_hilos(self, docentries: list[str]) -> int:
         if not docentries:
             return 0
         doc_in = _render_in_list(docentries)
-        sql = self._query_validar_igv_update_hilos.replace("{{docentries_in}}", doc_in)
+        sql = self._query_actualizar_igv_hilos.replace("{{docentries_in}}", doc_in)
         return self._ejecutar_sql_modificacion(sql)
 
     def ejecutar_revisar_hilos(self) -> tuple[list[tuple[Any, ...]], list[str]]:
@@ -302,7 +302,7 @@ class SapHanaRepository:
         raise RuntimeError("No se pudo ejecutar la operacion SAP tras todos los reintentos.")
 
     def _render_query(self, fecha_inicio: date, fecha_fin: date, query_template: str | None = None) -> str:
-        template = query_template or self._query_template
+        template = query_template or self._query_reporte_ventas
         return (
             template
             .replace("{{fecha_inicio}}", fecha_inicio.strftime("%Y-%m-%d"))

@@ -12,37 +12,37 @@ from sap_report.infrastructure.config import Settings
 
 LOGGER = logging.getLogger(__name__)
 
-_QUERIES_DIR = Path(__file__).resolve().parent / "queries"
+_QUERIES_DIR = Path(__file__).resolve().parent / "queries" / "postgres"
 
-PG_QUERY_PATH = _QUERIES_DIR / "TUTATI.sql"
-PG_NC_QUERY_PATH = _QUERIES_DIR / "tutati_nc.sql"
-PG_PATCH_ETL_PATH = _QUERIES_DIR / "migrar_OC.sql"
-PG_DATOS_PAGO_PATH = _QUERIES_DIR / "datos_pago_pg.sql"
-PG_DATOS_RMA_PATH = _QUERIES_DIR / "datos_rma_pg.sql"
+REPORTE_VENTAS_PATH = _QUERIES_DIR / "reporte_ventas.sql"
+REPORTE_NOTAS_CREDITO_PATH = _QUERIES_DIR / "reporte_notas_credito.sql"
+MIGRAR_OC_PATH = _QUERIES_DIR / "migrar_oc.sql"
+DATOS_PAGO_PATH = _QUERIES_DIR / "datos_pago.sql"
+DATOS_RMA_PATH = _QUERIES_DIR / "datos_rma.sql"
 
 
 class PostgresRepository:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._query = PG_QUERY_PATH.read_text(encoding="utf-8")
-        self._query_nc = PG_NC_QUERY_PATH.read_text(encoding="utf-8")
-        self._query_patch_etl = PG_PATCH_ETL_PATH.read_text(encoding="utf-8")
-        self._query_datos_pago = PG_DATOS_PAGO_PATH.read_text(encoding="utf-8")
-        self._query_datos_rma = PG_DATOS_RMA_PATH.read_text(encoding="utf-8")
+        self._query_reporte_ventas = REPORTE_VENTAS_PATH.read_text(encoding="utf-8")
+        self._query_reporte_notas_credito = REPORTE_NOTAS_CREDITO_PATH.read_text(encoding="utf-8")
+        self._query_migrar_oc = MIGRAR_OC_PATH.read_text(encoding="utf-8")
+        self._query_datos_pago = DATOS_PAGO_PATH.read_text(encoding="utf-8")
+        self._query_datos_rma = DATOS_RMA_PATH.read_text(encoding="utf-8")
 
     def ejecutar_consulta_sql(
         self,
         fecha_inicio: date,
         fecha_fin: date,
     ) -> tuple[list[tuple[Any, ...]], list[str]]:
-        return self._ejecutar_sql(self._query, fecha_inicio, fecha_fin)
+        return self._ejecutar_sql(self._query_reporte_ventas, fecha_inicio, fecha_fin)
 
     def ejecutar_consulta_nc_sql(
         self,
         fecha_inicio: date,
         fecha_fin: date,
     ) -> tuple[list[tuple[Any, ...]], list[str]]:
-        return self._ejecutar_sql(self._query_nc, fecha_inicio, fecha_fin)
+        return self._ejecutar_sql(self._query_reporte_notas_credito, fecha_inicio, fecha_fin)
 
     def consultar_datos_pago(self, orden: str) -> tuple[list[tuple[Any, ...]], list[str]]:
         return self._consultar_por_orden(self._query_datos_pago, orden)
@@ -51,7 +51,7 @@ class PostgresRepository:
         return self._consultar_por_orden(self._query_datos_rma, orden)
 
     def ejecutar_migrar_oc(self, fecha: date) -> None:
-        sql = self._query_patch_etl.replace("{{fecha}}", fecha.strftime("%Y-%m-%d"))
+        sql = self._query_migrar_oc.replace("{{fecha}}", fecha.strftime("%Y-%m-%d"))
         for intento in range(1, self._settings.reintentos + 1):
             conn = None
             cur = None
