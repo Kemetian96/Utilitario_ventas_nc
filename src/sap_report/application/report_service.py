@@ -197,8 +197,7 @@ class ReportService:
             mysql = str(exc)
         return {"sap": sap, "postgres": pg, "mysql": mysql}
 
-    def validar_articulos(self, status_cb=None) -> list[str]:
-        # Ejecuta patch ETL (ayer y anteayer) antes de validar articulos.
+    def ejecutar_migrar_oc_recientes(self, status_cb=None) -> list[date]:
         ayer = date.today() - timedelta(days=1)
         anteayer = date.today() - timedelta(days=2)
         if status_cb:
@@ -208,8 +207,9 @@ class ReportService:
         if status_cb:
             status_cb(f"Ejecutando patch ETL: {anteayer}")
         self._postgres_repository.ejecutar_migrar_oc(anteayer)
+        return [ayer, anteayer]
 
-        # Calcula rango: un mes antes y un mes despues de hoy.
+    def validar_articulos(self, status_cb=None) -> list[str]:
         hoy = date.today()
         fecha_inicio = _add_months(hoy, -1)
         fecha_fin = _add_months(hoy, 1)

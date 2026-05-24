@@ -4,12 +4,20 @@
 
 {% block content %}
   <section class="panel">
-    <form method="post" data-loading-text="Ejecutando patch ETL y buscando URLs…">
-      <div class="actions">
-        <button class="button" type="submit">Ejecutar validación</button>
-      </div>
-    </form>
+    <div class="actions">
+      <form method="post" style="display:inline" data-loading-text="Ejecutando migración OC…">
+        <input type="hidden" name="accion" value="migrar_oc">
+        <button class="button" type="submit">Orden de Compra</button>
+      </form>
+      <form method="post" style="display:inline" data-loading-text="Buscando URLs de validación…">
+        <input type="hidden" name="accion" value="articulos">
+        <button class="button" type="submit">Artículos</button>
+      </form>
+    </div>
 
+    {% if success %}
+      <div class="alert ok">{{ success }}</div>
+    {% endif %}
     {% if error %}
       <div class="alert error">{{ error }}</div>
     {% endif %}

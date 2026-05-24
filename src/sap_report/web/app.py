@@ -287,10 +287,17 @@ def create_app() -> Flask:
     @app.route("/validar-articulos", methods=["GET", "POST"])
     def validar_articulos() -> str:
         urls: list[str] | None = None
+        success: str | None = None
         error: str | None = None
         if request.method == "POST":
+            accion = request.form.get("accion", "articulos").strip()
             try:
-                urls = service.validar_articulos()
+                if accion == "migrar_oc":
+                    fechas = service.ejecutar_migrar_oc_recientes()
+                    fechas_str = " y ".join(f.strftime("%Y-%m-%d") for f in fechas)
+                    success = f"Migración OC ejecutada para {fechas_str}."
+                else:
+                    urls = service.validar_articulos()
             except Exception as exc:
                 error = str(exc)
 
@@ -298,6 +305,7 @@ def create_app() -> Flask:
             "validar_articulos.html",
             current_page="validar-articulos",
             urls=urls,
+            success=success,
             error=error,
         )
 
