@@ -69,8 +69,38 @@ class ReportService:
         pg_error: str | None = None
 
         try:
-            # Ejecuta lotes SAP por dia y exporta el reporte base.
-            sap_rows, sap_cols = self._ejecutar_por_lotes(
+            # PostgreSQL primero (es lo mas fragil; usa sesion persistente
+            # para reusar 1 sola conexion mientras dure el bloque).
+            with self._postgres_repository.sesion():
+                pg_rows, pg_cols = self._ejecutar_postgres_con_fallback(
+                    fecha_inicio_date,
+                    fecha_fin_date,
+                    "POSTGRES",
+                    status_cb,
+                    query_method_name="ejecutar_consulta_sql_rango",
+                )
+                exportar_excel(pg_rows, pg_cols, self._postgres_output_path)
+                pg_nc_rows, pg_nc_cols = self._ejecutar_postgres_con_fallback(
+                    fecha_inicio_date,
+                    fecha_fin_date,
+                    "POSTGRES_NC",
+                    status_cb,
+                    query_method_name="ejecutar_consulta_nc_sql_rango",
+                )
+            pg_nc_acum_rows, pg_nc_acum_cols = _acumular_tutati_nc(pg_nc_rows, pg_nc_cols)
+            exportar_pestana_excel(
+                pg_nc_acum_rows,
+                pg_nc_acum_cols,
+                self._postgres_output_path,
+                sheet_name="Acumulado_NC",
+            )
+        except Exception as exc:
+            pg_error = str(exc)
+            LOGGER.exception("PostgreSQL fallo durante la ejecucion")
+
+        try:
+            # SAP soporta el rango completo en una sola llamada.
+            sap_rows, sap_cols = self._ejecutar_rango_completo(
                 fecha_inicio_date,
                 fecha_fin_date,
                 self._sap_repository,
@@ -78,8 +108,8 @@ class ReportService:
                 status_cb,
             )
             exportar_excel(sap_rows, sap_cols, self._sap_output_path)
-            # Ejecuta notas de credito SAP y agrega pestaña de acumulado.
-            sap_nc_rows, sap_nc_cols = self._ejecutar_por_lotes(
+            # Notas de credito SAP en una sola llamada y pestaña de acumulado.
+            sap_nc_rows, sap_nc_cols = self._ejecutar_rango_completo(
                 fecha_inicio_date,
                 fecha_fin_date,
                 self._sap_repository,
@@ -97,36 +127,6 @@ class ReportService:
         except Exception as exc:
             sap_error = str(exc)
             LOGGER.exception("SAP fallo durante la ejecucion")
-
-        try:
-            # Ejecuta lotes PostgreSQL por dia y exporta el reporte base.
-            pg_rows, pg_cols = self._ejecutar_por_lotes(
-                fecha_inicio_date,
-                fecha_fin_date,
-                self._postgres_repository,
-                "POSTGRES",
-                status_cb,
-            )
-            exportar_excel(pg_rows, pg_cols, self._postgres_output_path)
-            # Ejecuta notas de credito PostgreSQL y agrega pestaña de acumulado.
-            pg_nc_rows, pg_nc_cols = self._ejecutar_por_lotes(
-                fecha_inicio_date,
-                fecha_fin_date,
-                self._postgres_repository,
-                "POSTGRES_NC",
-                status_cb,
-                query_method_name="ejecutar_consulta_nc_sql",
-            )
-            pg_nc_acum_rows, pg_nc_acum_cols = _acumular_tutati_nc(pg_nc_rows, pg_nc_cols)
-            exportar_pestana_excel(
-                pg_nc_acum_rows,
-                pg_nc_acum_cols,
-                self._postgres_output_path,
-                sheet_name="Acumulado_NC",
-            )
-        except Exception as exc:
-            pg_error = str(exc)
-            LOGGER.exception("PostgreSQL fallo durante la ejecucion")
 
         if sap_error and pg_error:
             # Si ambos fallan, se informa error global.
@@ -705,7 +705,7 @@ class ReportService:
             "cols": ["Estado", "Orden", "Monto_SAP", "Monto_TUTATI", "Diferencia"],
         }
 
-    def _ejecutar_por_lotes(
+    def _ejecutar_rango_completo(
         self,
         fecha_inicio_date: date,
         fecha_fin_date: date,
@@ -714,27 +714,69 @@ class ReportService:
         status_cb=None,
         query_method_name: str = "ejecutar_consulta_sql",
     ) -> tuple[list[tuple[Any, ...]], list[str]]:
-        # Ejecuta por dia para evitar consultas demasiado grandes.
-        fecha_actual = fecha_inicio_date
+        # Una sola llamada con todo el rango.
+        msg = f"{etiqueta}: {fecha_inicio_date} -> {fecha_fin_date}"
+        LOGGER.info(msg)
+        if status_cb:
+            status_cb(msg)
+        rows, cols = getattr(repository, query_method_name)(fecha_inicio_date, fecha_fin_date)
+        if cols is None:
+            raise RuntimeError(f"La consulta {etiqueta} no devolvio estructura de columnas.")
+        return list(rows), cols
+
+    def _ejecutar_postgres_con_fallback(
+        self,
+        fecha_inicio_date: date,
+        fecha_fin_date: date,
+        etiqueta: str,
+        status_cb=None,
+        query_method_name: str = "ejecutar_consulta_sql_rango",
+    ) -> tuple[list[tuple[Any, ...]], list[str]]:
+        # Itera dia por dia. Si los reintentos del repo agotan, parte ese dia
+        # en 2 mitades de 12h (nunca mas chico que eso). Cada mitad reintenta
+        # por su cuenta; si tambien falla, se propaga el error.
         rows_total: list[tuple[Any, ...]] = []
         cols: list[str] | None = None
+        metodo = getattr(self._postgres_repository, query_method_name)
+        fecha_actual = fecha_inicio_date
         paso = 0
 
         while fecha_actual <= fecha_fin_date:
             paso += 1
-            msg = f"{etiqueta} lote {paso}: {fecha_actual} -> {fecha_actual}"
+            inicio_dt = datetime.combine(fecha_actual, datetime_time.min)
+            fin_dt = inicio_dt + timedelta(days=1)
+            msg = f"{etiqueta} dia {paso}: {fecha_actual}"
             LOGGER.info(msg)
             if status_cb:
                 status_cb(msg)
 
-            rows, cols = getattr(repository, query_method_name)(fecha_actual, fecha_actual)
-            rows_total.extend(rows)
+            try:
+                rows, cols = metodo(inicio_dt, fin_dt)
+                rows_total.extend(rows)
+            except Exception as exc:
+                LOGGER.warning(
+                    "%s dia %s fallo todos los reintentos (%s); fallback a 12h",
+                    etiqueta, fecha_actual, exc,
+                )
+                if status_cb:
+                    status_cb(f"{etiqueta} dia {paso} fallo, dividiendo a 12h...")
+                mitad_dt = inicio_dt + timedelta(hours=12)
+                for sub_inicio, sub_fin in ((inicio_dt, mitad_dt), (mitad_dt, fin_dt)):
+                    sub_msg = (
+                        f"{etiqueta} dia {paso} sub-lote "
+                        f"{sub_inicio:%H:%M}-{sub_fin:%H:%M}"
+                    )
+                    LOGGER.info(sub_msg)
+                    if status_cb:
+                        status_cb(sub_msg)
+                    sub_rows, cols = metodo(sub_inicio, sub_fin)
+                    rows_total.extend(sub_rows)
+
             fecha_actual += timedelta(days=1)
 
         if cols is None:
             raise RuntimeError(f"La consulta {etiqueta} no devolvio estructura de columnas.")
 
-        # Devuelve todo apilado (sin consolidar).
         return rows_total, cols
 
     def _generar_comparacion(

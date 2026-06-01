@@ -1,5 +1,6 @@
 import logging
 import time
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -29,20 +30,83 @@ class PostgresRepository:
         self._query_migrar_oc = MIGRAR_OC_PATH.read_text(encoding="utf-8")
         self._query_datos_pago = DATOS_PAGO_PATH.read_text(encoding="utf-8")
         self._query_datos_rma = DATOS_RMA_PATH.read_text(encoding="utf-8")
+        # Conexion persistente opcional. Cuando _sesion_activa es True, las
+        # queries reusan self._conn en lugar de abrir/cerrar una nueva cada vez.
+        # Si la conexion muere, se reabre automaticamente dentro de la sesion.
+        self._conn = None
+        self._sesion_activa = False
+
+    @contextmanager
+    def sesion(self):
+        """Mantiene una conexion viva mientras dure el bloque. Si la conexion
+        muere durante una query, se descarta y se reabre transparentemente.
+        """
+        self._sesion_activa = True
+        try:
+            yield
+        finally:
+            self._sesion_activa = False
+            conn = self._conn
+            self._conn = None
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    def _obtener_conn_para_query(self) -> tuple[Any, bool]:
+        """Devuelve (conn, es_persistente). Reabre la persistente si murio."""
+        if self._sesion_activa:
+            if self._conn is None:
+                self._conn = self._connect(keepalives=True)
+                self._conn.autocommit = True
+                cur = self._conn.cursor()
+                try:
+                    cur.execute("SET statement_timeout = 0")
+                finally:
+                    cur.close()
+            return self._conn, True
+        # Sin sesion: conexion temporal
+        conn = self._connect(keepalives=True)
+        conn.autocommit = True
+        cur = conn.cursor()
+        try:
+            cur.execute("SET statement_timeout = 0")
+        finally:
+            cur.close()
+        return conn, False
 
     def ejecutar_consulta_sql(
         self,
         fecha_inicio: date,
         fecha_fin: date,
     ) -> tuple[list[tuple[Any, ...]], list[str]]:
-        return self._ejecutar_sql(self._query_reporte_ventas, fecha_inicio, fecha_fin)
+        inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
+        fin_dt = datetime.combine(fecha_fin + timedelta(days=1), datetime.min.time())
+        return self.ejecutar_consulta_sql_rango(inicio_dt, fin_dt)
 
     def ejecutar_consulta_nc_sql(
         self,
         fecha_inicio: date,
         fecha_fin: date,
     ) -> tuple[list[tuple[Any, ...]], list[str]]:
-        return self._ejecutar_sql(self._query_reporte_notas_credito, fecha_inicio, fecha_fin)
+        inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
+        fin_dt = datetime.combine(fecha_fin + timedelta(days=1), datetime.min.time())
+        return self.ejecutar_consulta_nc_sql_rango(inicio_dt, fin_dt)
+
+    def ejecutar_consulta_sql_rango(
+        self,
+        inicio_dt: datetime,
+        fin_dt: datetime,
+    ) -> tuple[list[tuple[Any, ...]], list[str]]:
+        return self._ejecutar_sql_datetime(self._query_reporte_ventas, inicio_dt, fin_dt)
+
+    def ejecutar_consulta_nc_sql_rango(
+        self,
+        inicio_dt: datetime,
+        fin_dt: datetime,
+    ) -> tuple[list[tuple[Any, ...]], list[str]]:
+        return self._ejecutar_sql_datetime(self._query_reporte_notas_credito, inicio_dt, fin_dt)
 
     def consultar_datos_pago(self, orden: str) -> tuple[list[tuple[Any, ...]], list[str]]:
         return self._consultar_por_orden(self._query_datos_pago, orden)
@@ -129,25 +193,26 @@ class PostgresRepository:
             if conn:
                 conn.close()
 
-    def _ejecutar_sql(
+    def _ejecutar_sql_datetime(
         self,
         query: str,
-        fecha_inicio: date,
-        fecha_fin: date,
+        inicio_dt: datetime,
+        fin_dt: datetime,
     ) -> tuple[list[tuple[Any, ...]], list[str]]:
-        inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
-        fin_dt = datetime.combine(fecha_fin + timedelta(days=1), datetime.min.time())
         params = {
             "fecha1": fecha_a_cuid(inicio_dt),
             "fecha2": fecha_a_cuid(fin_dt),
         }
 
-        for intento in range(1, self._settings.reintentos + 1):
+        # El killer del servidor es ciclico (~2-3s). 1s de sleep entre intentos
+        # cae entre ciclos. Si hay sesion() abierta se reusa la conexion;
+        # solo se abre una nueva cuando esta muere.
+        max_intentos = max(self._settings.reintentos, 10)
+        for intento in range(1, max_intentos + 1):
             conn = None
             cur = None
             try:
-                conn = self._connect(keepalives=True)
-                conn.autocommit = True
+                conn, _ = self._obtener_conn_para_query()
                 cur = conn.cursor()
                 cur.execute(query, params)
                 rows = cur.fetchall()
@@ -156,19 +221,30 @@ class PostgresRepository:
                 cols = [c[0] for c in cur.description]
                 return rows, cols
             except psycopg2.OperationalError as exc:
+                # La conexion murio; descartar la persistente para que la
+                # proxima iteracion abra una nueva (dentro de la misma sesion).
+                if conn is not None and conn is self._conn:
+                    self._conn = None
                 LOGGER.warning(
                     "Conexion PostgreSQL caida (intento %s/%s): %s",
                     intento,
-                    self._settings.reintentos,
+                    max_intentos,
                     exc,
                 )
-                if intento == self._settings.reintentos:
+                if intento == max_intentos:
                     raise
-                time.sleep(self._settings.espera_segundos)
+                time.sleep(1.0)
             finally:
                 if cur:
-                    cur.close()
-                if conn:
-                    conn.close()
+                    try:
+                        cur.close()
+                    except Exception:
+                        pass
+                # Cerrar conn solo si NO es la persistente vigente
+                if conn is not None and conn is not self._conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
 
         raise RuntimeError("No se pudo ejecutar la consulta PostgreSQL tras todos los reintentos.")
