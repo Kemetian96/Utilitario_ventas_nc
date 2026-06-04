@@ -817,7 +817,7 @@ def create_app() -> Flask:
 
 def main() -> None:
     app = create_app()
-    app.run(host="127.0.0.1", port=8000, debug=False)
+    app.run(host="0.0.0.0", port=8000, debug=False)
 
 
 def _parse_date(raw: str) -> date:
