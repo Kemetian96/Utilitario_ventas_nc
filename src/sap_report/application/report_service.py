@@ -362,10 +362,12 @@ class ReportService:
                         idx_consignado = _find_col_index_optional(items_cols, ["consignado"])
                         idx_b2b = _find_col_index_optional(items_cols, ["b2b"])
                         for row in items_rows:
+                            material = str(row[idx_material]) if row[idx_material] is not None else ""
+                            if material == "70000192":
+                                continue  # Flete, no se considera en prestamo
                             id_order = str(row[idx_id_order]) if idx_id_order is not None and row[idx_id_order] is not None else ""
                             uid = str(row[idx_uid]) if idx_uid is not None and row[idx_uid] is not None else ""
                             docentry = docentry_por_orden.get(id_order, "")
-                            material = str(row[idx_material]) if row[idx_material] is not None else ""
                             centro = str(row[idx_centro]) if row[idx_centro] is not None else ""
                             matcentro = str(row[idx_matcentro]) if row[idx_matcentro] is not None else material + centro
                             cantidad = row[idx_cantidad]
@@ -391,6 +393,8 @@ class ReportService:
                 idx_alm = _find_col_index(trani_cols, ["u_bot_almacen_devid"])
                 for row in trani_rows:
                     material = str(row[idx_mat]) if row[idx_mat] is not None else ""
+                    if material == "70000192":
+                        continue  # Flete, no se considera en prestamo
                     centro = str(row[idx_alm]) if row[idx_alm] is not None else ""
                     matcentro = material + centro
                     cantidad = row[idx_cant]

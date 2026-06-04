@@ -4,7 +4,7 @@ import subprocess
 import time
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -258,8 +258,9 @@ def create_app() -> Flask:
 
     @app.route("/ejecutar-reporte", methods=["GET", "POST"])
     def ejecutar_reporte() -> str:
-        fecha_inicio_value = settings.fecha_inicio_default[:10]
-        fecha_fin_value = settings.fecha_fin_default[:10]
+        ayer_iso = (date.today() - timedelta(days=1)).isoformat()
+        fecha_inicio_value = ayer_iso
+        fecha_fin_value = ayer_iso
         result: dict[str, Any] | None = None
         error: str | None = None
 
@@ -370,7 +371,7 @@ def create_app() -> Flask:
 
     @app.route("/validar-pagos", methods=["GET", "POST"])
     def validar_pagos() -> str:
-        fecha_value = settings.fecha_fin_default[:10]
+        fecha_value = (date.today() - timedelta(days=1)).isoformat()
         tipo_pago_value = "Tarjetas Visanet"
         result: dict[str, Any] | None = None
         error: str | None = None
@@ -399,8 +400,9 @@ def create_app() -> Flask:
 
     @app.route("/por-enviar", methods=["GET", "POST"])
     def por_enviar() -> str:
-        fecha_inicio_value = settings.fecha_inicio_default[:10]
-        fecha_fin_value = settings.fecha_fin_default[:10]
+        ayer_iso = (date.today() - timedelta(days=1)).isoformat()
+        fecha_inicio_value = ayer_iso
+        fecha_fin_value = ayer_iso
         tipo_value = "pendientes"
         rows: list[tuple[Any, ...]] | None = None
         cols: list[str] | None = None
@@ -754,7 +756,7 @@ def create_app() -> Flask:
 
     @app.route("/correo", methods=["GET", "POST"])
     def correo() -> str:
-        fecha_value = settings.fecha_fin_default[:10]
+        fecha_value = (date.today() - timedelta(days=1)).isoformat()
         plantillas = service.listar_plantillas_correo()
         template_id = ""
         success: str | None = None
