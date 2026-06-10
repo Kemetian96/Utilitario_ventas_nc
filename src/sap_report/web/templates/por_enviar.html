@@ -115,6 +115,18 @@
       </span>
 
       {% if rows %}
+        {% if tipo_value in ('pendientes', 'ventas_nc', 'venta_doble') %}
+          <form method="post"
+                data-loading-text="Enviando todos..."
+                onsubmit="return confirm('¿Enviar TODOS los registros de esta pestaña?');"
+                style="margin-bottom: 12px;">
+            <input type="hidden" name="accion" value="enviar_todos">
+            <input type="hidden" name="fecha_inicio" value="{{ fecha_inicio_value }}">
+            <input type="hidden" name="fecha_fin" value="{{ fecha_fin_value }}">
+            <input type="hidden" name="tipo" value="{{ tipo_value }}">
+            <button class="button" type="submit">Enviar todos</button>
+          </form>
+        {% endif %}
         <div class="table-wrap">
           <table class="por-enviar-table">
             <thead>

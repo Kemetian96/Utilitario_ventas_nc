@@ -445,6 +445,55 @@ def create_app() -> Flask:
                         success = f"Movimiento creado para {tipo_pendiente} {uid}."
                     else:
                         error = f"No se pudo crear el movimiento para {tipo_pendiente} {uid}."
+                elif accion == "enviar_todos":
+                    # Envia masivamente todos los registros visibles de la pestaña.
+                    if tipo_value == "venta_doble":
+                        rows_all, _ = service.consultar_venta_doble(
+                            fecha_inicio=_parse_date(fecha_inicio_value),
+                            fecha_fin=_parse_date(fecha_fin_value),
+                        )
+                        enviados, fallidos, errores = 0, 0, []
+                        for r in rows_all:
+                            tp = str(r[0]) if r[0] is not None else ""
+                            uid = str(r[1]) if r[1] is not None else ""
+                            if not uid or not tp:
+                                continue
+                            try:
+                                service.enviar_venta_doble(uid, tp)
+                                enviados += 1
+                            except Exception as exc:
+                                fallidos += 1
+                                if len(errores) < 5:
+                                    errores.append(f"{tp} {uid}: {exc}")
+                    elif tipo_value in ("pendientes", "ventas_nc"):
+                        rows_all, _ = service.consultar_por_enviar(
+                            fecha_inicio=_parse_date(fecha_inicio_value),
+                            fecha_fin=_parse_date(fecha_fin_value),
+                            tipo=tipo_value,
+                        )
+                        enviados, fallidos, errores = 0, 0, []
+                        for r in rows_all:
+                            if str(r[3]) == "5":
+                                continue  # ya enviado
+                            id_mov = str(r[0]) if r[0] is not None else ""
+                            if not id_mov.isdigit():
+                                continue
+                            try:
+                                service.enviar_movimiento_por_enviar(int(id_mov))
+                                enviados += 1
+                            except Exception as exc:
+                                fallidos += 1
+                                if len(errores) < 5:
+                                    errores.append(f"id={id_mov}: {exc}")
+                    else:
+                        raise ValueError(f"Envio masivo no soportado para tipo {tipo_value!r}.")
+                    msg = f"Enviados: {enviados}. Fallidos: {fallidos}."
+                    if errores:
+                        msg += " Errores: " + " | ".join(errores)
+                    if fallidos > 0:
+                        error = msg
+                    else:
+                        success = msg
 
                 if tipo_value == "venta_doble":
                     rows, cols = service.consultar_venta_doble(
