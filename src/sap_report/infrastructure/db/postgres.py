@@ -20,6 +20,7 @@ REPORTE_NOTAS_CREDITO_PATH = _QUERIES_DIR / "reporte_notas_credito.sql"
 MIGRAR_OC_PATH = _QUERIES_DIR / "migrar_oc.sql"
 DATOS_PAGO_PATH = _QUERIES_DIR / "datos_pago.sql"
 DATOS_RMA_PATH = _QUERIES_DIR / "datos_rma.sql"
+ORDEN_PAGO_PATH = _QUERIES_DIR / "orden_pago.sql"
 
 
 class PostgresRepository:
@@ -30,6 +31,7 @@ class PostgresRepository:
         self._query_migrar_oc = MIGRAR_OC_PATH.read_text(encoding="utf-8")
         self._query_datos_pago = DATOS_PAGO_PATH.read_text(encoding="utf-8")
         self._query_datos_rma = DATOS_RMA_PATH.read_text(encoding="utf-8")
+        self._query_orden_pago = ORDEN_PAGO_PATH.read_text(encoding="utf-8")
         # Conexion persistente opcional. Cuando _sesion_activa es True, las
         # queries reusan self._conn en lugar de abrir/cerrar una nueva cada vez.
         # Si la conexion muere, se reabre automaticamente dentro de la sesion.
@@ -113,6 +115,37 @@ class PostgresRepository:
 
     def consultar_datos_rma(self, orden: str) -> tuple[list[tuple[Any, ...]], list[str]]:
         return self._consultar_por_orden(self._query_datos_rma, orden)
+
+    def consultar_orden_pago(
+        self,
+        uids: list[str],
+    ) -> tuple[list[tuple[Any, ...]], list[str]]:
+        if not uids:
+            return [], ["uid_orders", "order_payment_type"]
+        placeholders = ", ".join(["%s"] * len(uids))
+        query = self._query_orden_pago.replace("{{uids}}", placeholders)
+        conn = None
+        cur = None
+        try:
+            conn = self._connect(keepalives=True)
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute("SET statement_timeout = 0")
+            cur.execute(query, tuple(uids))
+            rows = cur.fetchall()
+            cols = [c[0] for c in cur.description] if cur.description else []
+            return rows, cols
+        finally:
+            if cur:
+                try:
+                    cur.close()
+                except Exception:
+                    pass
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def ejecutar_migrar_oc(self, fecha: date) -> None:
         sql = self._query_migrar_oc.replace("{{fecha}}", fecha.strftime("%Y-%m-%d"))

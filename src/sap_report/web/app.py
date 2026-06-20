@@ -8,10 +8,18 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, abort, jsonify, render_template, request, send_file, session, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, session, url_for
 
 from sap_report.application import PAYMENT_ACCOUNT_OPTIONS
 from sap_report.bootstrap import build_service
+from sap_report.web.auth import (
+    autenticar,
+    cambiar_password,
+    listar_usuarios,
+    requiere_modulo,
+    tiene_acceso,
+    usuario_actual,
+)
 
 
 _RESUMEN_CACHE: dict[str, tuple[float, list]] = {}
@@ -128,6 +136,20 @@ MODULES = [
         "url": "/revisar-hilos",
         "sidebar": False,
     },
+    {
+        "page": "orden-pago",
+        "title": "Orden - Pago",
+        "subtitle": "Tipo de pago por UID de orden.",
+        "url": "/orden-pago",
+        "sidebar": True,
+    },
+    {
+        "page": "admin-usuarios",
+        "title": "Usuarios",
+        "subtitle": "Cambiar contraseñas.",
+        "url": "/admin-usuarios",
+        "sidebar": True,
+    },
 ]
 
 
@@ -135,6 +157,75 @@ def create_app() -> Flask:
     settings, service = build_service()
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.secret_key = os.environ.get("FLASK_SECRET_KEY", "sap-web-secret-key-local")
+
+    # Hacer tiene_acceso disponible dentro de cualquier template Jinja.
+    app.jinja_env.globals["tiene_acceso"] = tiene_acceso
+
+    # ── Auth: toda ruta requiere login excepto /login y los estaticos ──
+    _RUTAS_PUBLICAS = {"login", "static"}
+
+    @app.before_request
+    def _enforce_login():
+        if request.endpoint in _RUTAS_PUBLICAS:
+            return None
+        if usuario_actual() is None:
+            return redirect(url_for("login", next=request.path))
+        return None
+
+    @app.route("/login", methods=["GET", "POST"])
+    def login() -> Any:
+        next_url = request.values.get("next", "") or url_for("index")
+        error: str | None = None
+        username = ""
+        if request.method == "POST":
+            username = request.form.get("username", "").strip()
+            password = request.form.get("password", "")
+            user = autenticar(username, password)
+            if user is None:
+                error = "Usuario o contraseña incorrectos."
+            else:
+                session.clear()
+                session["user"] = user["username"]
+                session["modulos"] = user.get("modulos", [])
+                return redirect(next_url)
+        return render_template(
+            "login.html",
+            error=error,
+            username=username,
+            next_url=next_url,
+        )
+
+    @app.route("/logout")
+    def logout() -> Any:
+        session.clear()
+        return redirect(url_for("login"))
+
+    @app.route("/admin-usuarios", methods=["GET", "POST"])
+    @requiere_modulo("admin-usuarios")
+    def admin_usuarios() -> str:
+        error: str | None = None
+        success: str | None = None
+        if request.method == "POST":
+            target = request.form.get("username", "").strip()
+            nueva = request.form.get("nueva_password", "")
+            confirmar = request.form.get("confirmar_password", "")
+            if not target or not nueva:
+                error = "Faltan datos."
+            elif nueva != confirmar:
+                error = "Las contraseñas no coinciden."
+            elif len(nueva) < 6:
+                error = "La contraseña debe tener al menos 6 caracteres."
+            elif cambiar_password(target, nueva):
+                success = f"Contraseña de {target} actualizada."
+            else:
+                error = f"Usuario {target} no encontrado."
+        return render_template(
+            "admin_usuarios.html",
+            current_page="admin-usuarios",
+            usuarios=listar_usuarios(),
+            error=error,
+            success=success,
+        )
 
     @app.context_processor
     def inject_layout_context() -> dict[str, Any]:
@@ -144,10 +235,16 @@ def create_app() -> Flask:
             current_page = request.endpoint.replace("_", "-")
         current_module = _get_current_module(current_page)
         sidebar_page = "pagos" if current_page in _PAGOS_SUBPAGES else current_page
+        # Filtrar modulos del menu por permisos del usuario actual
+        modulos_visibles = [
+            m for m in MODULES
+            if not m.get("sidebar") or tiene_acceso(m["page"])
+        ]
         return {
-            "modules": MODULES,
+            "modules": modulos_visibles,
             "current_module": current_module,
             "sidebar_page": sidebar_page,
+            "usuario": usuario_actual(),
         }
 
     @app.get("/")
@@ -240,6 +337,7 @@ def create_app() -> Flask:
         return jsonify({"ok": True, "fallback": True})
 
     @app.route("/probar-conexiones", methods=["GET", "POST"])
+    @requiere_modulo("probar-conexiones")
     def probar_conexiones() -> str:
         result: dict[str, str] | None = None
         error: str | None = None
@@ -257,6 +355,7 @@ def create_app() -> Flask:
         )
 
     @app.route("/ejecutar-reporte", methods=["GET", "POST"])
+    @requiere_modulo("ejecutar-reporte")
     def ejecutar_reporte() -> str:
         ayer_iso = (date.today() - timedelta(days=1)).isoformat()
         fecha_inicio_value = ayer_iso
@@ -286,6 +385,7 @@ def create_app() -> Flask:
         )
 
     @app.route("/validar-articulos", methods=["GET", "POST"])
+    @requiere_modulo("validar-articulos")
     def validar_articulos() -> str:
         urls: list[str] | None = None
         success: str | None = None
@@ -311,6 +411,7 @@ def create_app() -> Flask:
         )
 
     @app.route("/validar-igv", methods=["GET", "POST"])
+    @requiere_modulo("validar-igv")
     def validar_igv() -> str:
         result: dict[str, Any] | None = None
         error: str | None = None
@@ -328,6 +429,7 @@ def create_app() -> Flask:
         )
 
     @app.route("/revisar-hilos", methods=["GET", "POST"])
+    @requiere_modulo("revisar-hilos")
     def revisar_hilos() -> str:
         rows: list[tuple[Any, ...]] | None = None
         cols = ["Hilo", "Cantidad"]
@@ -347,6 +449,7 @@ def create_app() -> Flask:
         )
 
     @app.route("/prestamo", methods=["GET", "POST"])
+    @requiere_modulo("prestamo")
     def prestamo() -> str:
         rows: list[tuple[Any, ...]] | None = None
         cols: list[str] | None = None
@@ -366,10 +469,12 @@ def create_app() -> Flask:
         )
 
     @app.get("/pagos")
+    @requiere_modulo("pagos")
     def pagos() -> str:
         return render_template("pagos.html")
 
     @app.route("/validar-pagos", methods=["GET", "POST"])
+    @requiere_modulo("validar-pagos")
     def validar_pagos() -> str:
         fecha_value = (date.today() - timedelta(days=1)).isoformat()
         tipo_pago_value = "Tarjetas Visanet"
@@ -399,6 +504,7 @@ def create_app() -> Flask:
         )
 
     @app.route("/por-enviar", methods=["GET", "POST"])
+    @requiere_modulo("por-enviar")
     def por_enviar() -> str:
         ayer_iso = (date.today() - timedelta(days=1)).isoformat()
         fecha_inicio_value = ayer_iso
@@ -523,6 +629,7 @@ def create_app() -> Flask:
         )
 
     @app.route("/consultar-pago-sap", methods=["GET", "POST"])
+    @requiere_modulo("consultar-pago-sap")
     def consultar_pago_sap() -> str:
         import json as _json
         orden_value = ""
@@ -604,6 +711,7 @@ def create_app() -> Flask:
         )
 
     @app.route("/enviar-pago-sap", methods=["GET", "POST"])
+    @requiere_modulo("enviar-pago-sap")
     def enviar_pago_sap() -> str:
         import json as _json
         result_json: str | None = None
@@ -803,7 +911,30 @@ def create_app() -> Flask:
             pagos_candidatos=None,
         )
 
+    @app.route("/orden-pago", methods=["GET", "POST"])
+    @requiere_modulo("orden-pago")
+    def orden_pago() -> str:
+        uids_texto = ""
+        rows: list[tuple[Any, ...]] | None = None
+        cols: list[str] = ["uid_orders", "order_payment_type"]
+        error: str | None = None
+        if request.method == "POST":
+            uids_texto = request.form.get("uids", "")
+            try:
+                rows, cols = service.consultar_orden_pago(uids_texto)
+            except Exception as exc:
+                error = str(exc)
+        return render_template(
+            "orden_pago.html",
+            current_page="orden-pago",
+            uids_texto=uids_texto,
+            rows=rows,
+            cols=cols,
+            error=error,
+        )
+
     @app.route("/correo", methods=["GET", "POST"])
+    @requiere_modulo("correo")
     def correo() -> str:
         fecha_value = (date.today() - timedelta(days=1)).isoformat()
         plantillas = service.listar_plantillas_correo()
@@ -832,6 +963,7 @@ def create_app() -> Flask:
         )
 
     @app.get("/validacion-nubefact")
+    @requiere_modulo("validacion-nubefact")
     def validacion_nubefact() -> str:
         rows: list[dict] = []
         cols: list[str] = []

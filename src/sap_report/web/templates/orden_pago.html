@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}Orden - Pago | SAP Web{% endblock %}
+
+{% block content %}
+  <style>
+    .uids-textarea {
+      width: 100%;
+      min-height: 180px;
+      padding: 10px 12px;
+      border-radius: 9px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.9rem;
+      font-family: "Consolas", "Courier New", monospace;
+      resize: vertical;
+    }
+    .uids-textarea:focus {
+      outline: none;
+      border-color: rgba(124,156,255,0.5);
+      box-shadow: 0 0 0 3px rgba(124,156,255,0.09);
+    }
+    .orden-pago-table tbody tr {
+      cursor: pointer;
+    }
+    .orden-pago-table tbody tr.selected {
+      background: rgba(124,156,255,0.12);
+    }
+  </style>
+
+  <section class="panel">
+    <span class="section-label">UIDs de orden (uno por línea)</span>
+    <form method="post" data-loading-text="Consultando PostgreSQL...">
+      <textarea name="uids" class="uids-textarea"
+        placeholder="FE5BQR8V53TM&#10;FE5BQRG9VLW8&#10;..."
+        required>{{ uids_texto }}</textarea>
+      <div class="actions">
+        <button class="button" type="submit">Consultar</button>
+      </div>
+    </form>
+
+    {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  </section>
+
+  {% if rows is not none %}
+    <section class="panel">
+      <span class="section-label">
+        Resultados | {{ rows | length }} fila{{ 's' if rows | length != 1 else '' }}
+      </span>
+      {% if rows %}
+        <div class="actions" style="margin-top: 0; margin-bottom: 8px;">
+          <button class="button ghost" type="button" id="btn-copiar">Copiar todo</button>
+          <button class="button ghost" type="button" id="btn-copiar-seleccion">Copiar selección</button>
+        </div>
+        <div class="table-wrap">
+          <table class="orden-pago-table" id="tabla-resultados">
+            <thead>
+              <tr>
+                {% for c in cols %}<th>{{ c }}</th>{% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+                <tr>
+                  {% for v in row %}<td>{{ v if v is not none else '-' }}</td>{% endfor %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="alert ok">Sin resultados para los UIDs ingresados.</div>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  <script>
+    (function () {
+      var tabla = document.getElementById("tabla-resultados");
+      if (!tabla) return;
+
+      // Selección de filas con click (toggle).
+      tabla.querySelectorAll("tbody tr").forEach(function (tr) {
+        tr.addEventListener("click", function () {
+          tr.classList.toggle("selected");
+        });
+      });
+
+      function filasComoTSV(rows) {
+        return Array.from(rows).map(function (tr) {
+          return Array.from(tr.querySelectorAll("td"))
+            .map(function (td) { return td.textContent; })
+            .join("\t");
+        }).join("\n");
+      }
+
+      function copiarTexto(texto, etiqueta) {
+        if (!texto) {
+          alert("No hay nada para copiar.");
+          return;
+        }
+        navigator.clipboard.writeText(texto).then(function () {
+          var btn = document.getElementById(etiqueta);
+          var orig = btn.textContent;
+          btn.textContent = "Copiado ✓";
+          setTimeout(function () { btn.textContent = orig; }, 1500);
+        }).catch(function () {
+          alert("No se pudo copiar al portapapeles.");
+        });
+      }
+
+      document.getElementById("btn-copiar").addEventListener("click", function () {
+        var todas = tabla.querySelectorAll("tbody tr");
+        copiarTexto(filasComoTSV(todas), "btn-copiar");
+      });
+
+      document.getElementById("btn-copiar-seleccion").addEventListener("click", function () {
+        var sel = tabla.querySelectorAll("tbody tr.selected");
+        if (sel.length === 0) {
+          alert("Selecciona al menos una fila (click sobre ella).");
+          return;
+        }
+        copiarTexto(filasComoTSV(sel), "btn-copiar-seleccion");
+      });
+    })();
+  </script>
+{% endblock %}

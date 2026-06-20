@@ -223,6 +223,7 @@ class MySQLRepository:
         "pendientes": (
             "t1.id_documents_movements_types NOT IN (13,14,15,9,10)"
             " AND t1.id_documents_movements_statuses IN (1,2,3,4)"
+            " AND (j.id_outbounds_statuses > 11 OR k.id_inbounds_statuses > 6)"
         ),
         "ventas_nc": (
             "t1.id_documents_movements_types IN (9,10)"

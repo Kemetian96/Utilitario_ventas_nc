@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Usuarios | SAP Web{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <span class="section-label">Cambiar contraseña</span>
+
+    {% if success %}<div class="alert ok">{{ success }}</div>{% endif %}
+    {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+    <form method="post" data-loading-text="Actualizando contraseña...">
+      <div class="form-grid">
+        <div class="field">
+          <label for="username">Usuario</label>
+          <select id="username" name="username" required>
+            <option value="">— seleccionar —</option>
+            {% for u in usuarios %}
+              <option value="{{ u }}">{{ u }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="nueva_password">Nueva contraseña</label>
+          <input id="nueva_password" name="nueva_password" type="password" minlength="6" required>
+        </div>
+        <div class="field">
+          <label for="confirmar_password">Confirmar</label>
+          <input id="confirmar_password" name="confirmar_password" type="password" minlength="6" required>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="button" type="submit">Cambiar contraseña</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}

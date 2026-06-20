@@ -77,6 +77,7 @@ class Settings:
     sap_hana_ssl_trust_store: Optional[str]
     sap_hana_ssl_key_store_password: Optional[str]
     sap_hana_connect_timeout: Optional[int]
+    sap_hana_communication_timeout_ms: int
     # MySQL (opcional)
     mysql_host: Optional[str]
     mysql_name: Optional[str]
@@ -131,6 +132,9 @@ def load_settings() -> Settings:
         sap_hana_ssl_trust_store=os.getenv("SAP_HANA_SSL_TRUST_STORE"),
         sap_hana_ssl_key_store_password=os.getenv("SAP_HANA_SSL_KEY_STORE_PASSWORD"),
         sap_hana_connect_timeout=_get_optional_int("SAP_HANA_CONNECT_TIMEOUT"),
+        sap_hana_communication_timeout_ms=int(
+            _get_env("SAP_HANA_COMMUNICATION_TIMEOUT_MS", "180000")
+        ),
         mysql_host=_get_optional_env("MYSQL_HOST"),
         mysql_name=_get_optional_env("MYSQL_NAME"),
         mysql_user=_get_optional_env("MYSQL_USER"),

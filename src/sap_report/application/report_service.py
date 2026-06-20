@@ -139,6 +139,8 @@ class ReportService:
         comparacion_nc_error: str | None = None
         if (not sap_error) and (not pg_error) and sap_cols and pg_cols:
             try:
+                LOGGER.info("Comparacion: inicio")
+                t0 = time.perf_counter()
                 self._generar_comparacion(
                     sap_rows,
                     sap_cols,
@@ -146,6 +148,7 @@ class ReportService:
                     pg_cols,
                     sheet_name="Comparacion",
                 )
+                LOGGER.info("Comparacion OK en %.2fs", time.perf_counter() - t0)
             except Exception as exc:
                 comparacion_error = str(exc)
                 LOGGER.exception("Comparacion fallo durante la ejecucion")
@@ -155,6 +158,8 @@ class ReportService:
         # Genera comparacion NC en otra pestaña.
         if (not sap_error) and (not pg_error) and sap_nc_cols and pg_nc_cols:
             try:
+                LOGGER.info("Comparacion_NC: inicio")
+                t0 = time.perf_counter()
                 self._generar_comparacion(
                     sap_nc_rows,
                     sap_nc_cols,
@@ -162,11 +167,14 @@ class ReportService:
                     pg_nc_cols,
                     sheet_name="Comparacion_NC",
                 )
+                LOGGER.info("Comparacion_NC OK en %.2fs", time.perf_counter() - t0)
             except Exception as exc:
                 comparacion_nc_error = str(exc)
                 LOGGER.exception("Comparacion NC fallo durante la ejecucion")
         else:
             comparacion_nc_error = "Comparacion NC omitida por error previo en SAP o PostgreSQL."
+
+        LOGGER.info("Reporte completo. Retornando a UI.")
 
         # Retorna resumen para mostrar en UI.
         return {
@@ -612,6 +620,18 @@ class ReportService:
     def consultar_payments_account_tienda(self, id_store: int) -> str | None:
         return self._mysql_repository.consultar_payments_account_tienda(id_store)
 
+    def consultar_orden_pago(
+        self,
+        uids_texto: str,
+    ) -> tuple[list[tuple[Any, ...]], list[str]]:
+        # Parsea UIDs uno por linea, descarta vacios y duplica.
+        lista = [u.strip() for u in (uids_texto or "").splitlines() if u.strip()]
+        # Elimina duplicados preservando orden.
+        lista = list(dict.fromkeys(lista))
+        if not lista:
+            raise ValueError("Ingresa al menos un UID.")
+        return self._postgres_repository.consultar_orden_pago(lista)
+
     def consultar_datos_rma_pg(self, orden: str) -> dict[str, Any] | None:
         orden = orden.strip()
         if not orden:
@@ -723,10 +743,13 @@ class ReportService:
         LOGGER.info(msg)
         if status_cb:
             status_cb(msg)
+        inicio = time.perf_counter()
         rows, cols = getattr(repository, query_method_name)(fecha_inicio_date, fecha_fin_date)
         if cols is None:
             raise RuntimeError(f"La consulta {etiqueta} no devolvio estructura de columnas.")
-        return list(rows), cols
+        rows_list = list(rows)
+        LOGGER.info("%s OK: %d filas en %.2fs", etiqueta, len(rows_list), time.perf_counter() - inicio)
+        return rows_list, cols
 
     def _ejecutar_postgres_con_fallback(
         self,
@@ -1101,7 +1124,11 @@ def _calcular_diferencias_validacion_nc(
     if not docentries:
         return []
 
-    validacion_rows, validacion_cols = sap_repository.ejecutar_validacion_nc(list(dict.fromkeys(docentries)))
+    docentries_unicos = list(dict.fromkeys(docentries))
+    LOGGER.info("validacion_nc: ejecutando con %d docentries", len(docentries_unicos))
+    t0 = time.perf_counter()
+    validacion_rows, validacion_cols = sap_repository.ejecutar_validacion_nc(docentries_unicos)
+    LOGGER.info("validacion_nc OK: %d filas en %.2fs", len(validacion_rows), time.perf_counter() - t0)
     idx_valid_doc = _find_col_index_optional(validacion_cols, ["u_bot_docentry"])
     if idx_valid_doc is None:
         idx_valid_doc = _find_col_index_optional(validacion_cols, ["docentry"])
@@ -1122,9 +1149,12 @@ def _calcular_diferencias_validacion_nc(
 
     articulos_por_doc: dict[str, set[str]] = {}
     if faltantes_candidatos:
+        LOGGER.info("validacion_nc_articulos: ejecutando con %d docentries", len(faltantes_candidatos))
+        t0 = time.perf_counter()
         articulos_rows, articulos_cols = sap_repository.ejecutar_validacion_nc_articulos(
             faltantes_candidatos
         )
+        LOGGER.info("validacion_nc_articulos OK: %d filas en %.2fs", len(articulos_rows), time.perf_counter() - t0)
         idx_art_doc = _find_col_index(articulos_cols, ["docentry"])
         idx_art_cod = _find_col_index(articulos_cols, ["u_bot_codarticulo"])
         for row in articulos_rows:

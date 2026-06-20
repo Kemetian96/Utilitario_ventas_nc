@@ -235,6 +235,10 @@ class SapHanaRepository:
             kwargs["sslValidateCertificate"] = self._settings.sap_hana_ssl_validate_certificate
         if self._settings.sap_hana_connect_timeout is not None:
             kwargs["connecttimeout"] = self._settings.sap_hana_connect_timeout
+        # Evita que la app se cuelgue para siempre si HANA no responde durante
+        # un query. 0 = sin timeout (no recomendado).
+        if self._settings.sap_hana_communication_timeout_ms > 0:
+            kwargs["communicationTimeout"] = self._settings.sap_hana_communication_timeout_ms
         if self._settings.sap_hana_ssl_trust_store:
             kwargs["sslTrustStore"] = self._settings.sap_hana_ssl_trust_store
         if self._settings.sap_hana_ssl_key_store_password:

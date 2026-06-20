@@ -5,12 +5,36 @@
 {% block content %}
   <section class="panel">
     <span class="section-label">Acceso rápido</span>
+
+    {% set accesos = [
+      ('ejecutar-reporte', 'Ejecutar reporte', '/ejecutar-reporte'),
+      ('pagos',            'Pagos',            '/pagos'),
+      ('validar-igv',      'Validar IGV',      '/validar-igv'),
+      ('validar-articulos','Validar artículos','/validar-articulos'),
+      ('prestamo',         'Préstamo',         '/prestamo'),
+      ('por-enviar',       'Por enviar',       '/por-enviar'),
+      ('correo',           'Correo',           '/correo'),
+      ('revisar-hilos',    'Revisar hilos',    '/revisar-hilos'),
+      ('probar-conexiones','Probar conexiones','/probar-conexiones'),
+      ('validacion-nubefact','Validación Nubefact','/validacion-nubefact'),
+      ('orden-pago',       'Orden - Pago',     '/orden-pago'),
+      ('admin-usuarios',   'Usuarios',         '/admin-usuarios'),
+    ] %}
+
+    {% set ns = namespace(mostrados=0) %}
     <div class="button-row">
-      <a class="button" href="/ejecutar-reporte">Ejecutar reporte</a>
-      <a class="button ghost" href="/pagos">Pagos</a>
-      <a class="button ghost" href="/validar-igv">Validar IGV</a>
-      <a class="button ghost" href="/validar-articulos">Validar artículos</a>
-      <a class="button ghost" href="/prestamo">Préstamo</a>
+      {% for page, title, url in accesos %}
+        {% if tiene_acceso(page) %}
+          <a class="button {{ '' if ns.mostrados == 0 else 'ghost' }}" href="{{ url }}">{{ title }}</a>
+          {% set ns.mostrados = ns.mostrados + 1 %}
+        {% endif %}
+      {% endfor %}
     </div>
+
+    {% if ns.mostrados == 0 %}
+      <div class="alert" style="margin-top: 10px;">
+        No tienes módulos asignados. Contacta al administrador.
+      </div>
+    {% endif %}
   </section>
 {% endblock %}
