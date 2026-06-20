@@ -1,0 +1,24 @@
+{
+  "ATC": {
+    "password_hash": "scrypt:32768:8:1$G9e4BSEXUiBwQWY3$40c864517241423b8b4872a72c773ae8fb0906b5f92c4a3f12a46749a016067f0064e2741feca34a19a64bcae38d060c491fd4503283917d5b2ec46d73f03467",
+    "modulos": [
+      "orden-pago"
+    ]
+  },
+  "SOPORTE1": {
+    "password_hash": "scrypt:32768:8:1$X4DKN9GnI1z9dpyG$aa21b375038ce833efce82bd62bf077b889595639a05e39a6559c0e472d398718e31cf44c10ec208ce6e89b70b0279e0fc7110cb86979024f2424552d61ae61f",
+    "modulos": [
+      "probar-conexiones",
+      "validar-articulos",
+      "revisar-hilos",
+      "por-enviar",
+      "correo"
+    ]
+  },
+  "SOPORTE2": {
+    "password_hash": "scrypt:32768:8:1$gDqVbT8nbj7pVVXu$7254ea23004a214ac05f75279fc8e3fb27dcb19165b12aaf82483707cd4e2903b76e83badc761e0b4618d55b8fccc7af0365ec76ce3f6992b71e5310390e8d26",
+    "modulos": [
+      "*"
+    ]
+  }
+}
