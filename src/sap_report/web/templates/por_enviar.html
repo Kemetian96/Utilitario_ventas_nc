@@ -39,6 +39,7 @@
       z-index: 200;
       padding: 24px;
     }
+    .modal-overlay[hidden] { display: none !important; }
     .modal-card {
       background: var(--surface);
       border: 1px solid var(--line);
@@ -116,16 +117,14 @@
 
       {% if rows %}
         {% if tipo_value in ('pendientes', 'ventas_nc', 'venta_doble') %}
-          <form method="post"
-                data-loading-text="Enviando todos..."
-                onsubmit="return confirm('¿Enviar TODOS los registros de esta pestaña?');"
-                style="margin-bottom: 12px;">
-            <input type="hidden" name="accion" value="enviar_todos">
-            <input type="hidden" name="fecha_inicio" value="{{ fecha_inicio_value }}">
-            <input type="hidden" name="fecha_fin" value="{{ fecha_fin_value }}">
-            <input type="hidden" name="tipo" value="{{ tipo_value }}">
-            <button class="button" type="submit">Enviar todos</button>
-          </form>
+          <div style="margin-bottom: 12px;">
+            <button class="button" type="button" id="btn-enviar-todos"
+                    data-fecha-inicio="{{ fecha_inicio_value }}"
+                    data-fecha-fin="{{ fecha_fin_value }}"
+                    data-tipo="{{ tipo_value }}">
+              Enviar todos
+            </button>
+          </div>
         {% endif %}
         <div class="table-wrap">
           <table class="por-enviar-table">
@@ -272,4 +271,139 @@
       })();
     </script>
   {% endif %}
+
+  <div class="modal-overlay" id="envio-modal" hidden>
+    <div class="modal-card" style="max-width: 460px; text-align: center;">
+      <div class="modal-title" id="envio-titulo">Enviando registros…</div>
+
+      <div style="margin: 18px 0;">
+        <div style="font-size: 2.2rem; font-weight: 700; font-variant-numeric: tabular-nums;">
+          <span id="envio-actual">0</span> / <span id="envio-total">0</span>
+        </div>
+        <div style="margin-top: 14px; height: 8px; background: var(--panel); border-radius: 999px; overflow: hidden;">
+          <div id="envio-barra" style="height: 100%; width: 0%; background: var(--accent); transition: width 200ms;"></div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 14px; justify-content: center; font-size: 0.9rem;">
+        <div><span style="color: var(--muted);">Enviados:</span> <strong id="envio-enviados" style="color: var(--ok);">0</strong></div>
+        <div><span style="color: var(--muted);">Fallidos:</span> <strong id="envio-fallidos" style="color: var(--bad);">0</strong></div>
+      </div>
+
+      <div id="envio-errores" hidden style="margin-top: 12px; text-align: left; font-size: 0.78rem; color: var(--bad); max-height: 130px; overflow-y: auto;"></div>
+
+      <div id="envio-acciones" hidden style="margin-top: 18px;">
+        <button type="button" class="button" id="envio-cerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var btn = document.getElementById("btn-enviar-todos");
+      if (!btn) return;
+
+      var modal      = document.getElementById("envio-modal");
+      var elActual   = document.getElementById("envio-actual");
+      var elTotal    = document.getElementById("envio-total");
+      var elBarra    = document.getElementById("envio-barra");
+      var elOk       = document.getElementById("envio-enviados");
+      var elFail     = document.getElementById("envio-fallidos");
+      var elErrores  = document.getElementById("envio-errores");
+      var elAcciones = document.getElementById("envio-acciones");
+      var elCerrar   = document.getElementById("envio-cerrar");
+      var elTitulo   = document.getElementById("envio-titulo");
+
+      function reset() {
+        elActual.textContent = "0";
+        elTotal.textContent  = "0";
+        elOk.textContent     = "0";
+        elFail.textContent   = "0";
+        elBarra.style.width  = "0%";
+        elErrores.hidden     = true;
+        elErrores.innerHTML  = "";
+        elAcciones.hidden    = true;
+        elTitulo.textContent = "Enviando registros…";
+      }
+
+      function handleEvento(data) {
+        if (data.tipo === "inicio") {
+          elTotal.textContent = data.total;
+        } else if (data.tipo === "progreso") {
+          elActual.textContent = data.actual;
+          elOk.textContent     = data.enviados;
+          elFail.textContent   = data.fallidos;
+          var pct = data.total > 0 ? (data.actual / data.total) * 100 : 0;
+          elBarra.style.width  = pct + "%";
+        } else if (data.tipo === "fin") {
+          elActual.textContent = data.total;
+          elOk.textContent     = data.enviados;
+          elFail.textContent   = data.fallidos;
+          elBarra.style.width  = "100%";
+          elTitulo.textContent = "Envío finalizado";
+          if (data.errores && data.errores.length > 0) {
+            elErrores.innerHTML = "<strong>Errores:</strong><br>" +
+              data.errores.map(function (e) { return "• " + e; }).join("<br>");
+            elErrores.hidden = false;
+          }
+          elAcciones.hidden = false;
+        } else if (data.tipo === "error") {
+          elTitulo.textContent = "Error";
+          elErrores.innerHTML  = data.mensaje || "Error desconocido";
+          elErrores.hidden     = false;
+          elAcciones.hidden    = false;
+        }
+      }
+
+      btn.addEventListener("click", function () {
+        if (!confirm("¿Enviar TODOS los registros de esta pestaña?")) return;
+
+        reset();
+        modal.hidden = false;
+
+        var fd = new FormData();
+        fd.append("fecha_inicio", btn.dataset.fechaInicio);
+        fd.append("fecha_fin",    btn.dataset.fechaFin);
+        fd.append("tipo",         btn.dataset.tipo);
+
+        fetch("/api/por-enviar/enviar-todos", { method: "POST", body: fd })
+          .then(function (resp) {
+            if (!resp.body) {
+              throw new Error("Tu navegador no soporta streaming.");
+            }
+            var reader = resp.body.getReader();
+            var decoder = new TextDecoder();
+            var buffer = "";
+
+            function leer() {
+              return reader.read().then(function (chunk) {
+                if (chunk.done) return;
+                buffer += decoder.decode(chunk.value, { stream: true });
+                var eventos = buffer.split("\n\n");
+                buffer = eventos.pop();
+                for (var i = 0; i < eventos.length; i++) {
+                  var linea = eventos[i];
+                  if (linea.indexOf("data: ") === 0) {
+                    try {
+                      handleEvento(JSON.parse(linea.slice(6)));
+                    } catch (e) {}
+                  }
+                }
+                return leer();
+              });
+            }
+            return leer();
+          })
+          .catch(function (err) {
+            handleEvento({ tipo: "error", mensaje: String(err) });
+          });
+      });
+
+      elCerrar.addEventListener("click", function () {
+        modal.hidden = true;
+        // Recargar para que la tabla refleje los nuevos estados
+        window.location.reload();
+      });
+    })();
+  </script>
 {% endblock %}

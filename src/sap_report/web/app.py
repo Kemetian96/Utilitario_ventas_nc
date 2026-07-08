@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -8,7 +9,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, Response, abort, jsonify, redirect, render_template, request, send_file, session, stream_with_context, url_for
 
 from sap_report.application import PAYMENT_ACCOUNT_OPTIONS
 from sap_report.bootstrap import build_service
@@ -501,6 +502,95 @@ def create_app() -> Flask:
             payment_options=PAYMENT_ACCOUNT_OPTIONS,
             result=result,
             error=error,
+        )
+
+    @app.post("/api/por-enviar/enviar-todos")
+    @requiere_modulo("por-enviar")
+    def api_enviar_todos() -> Any:
+        # Stream de eventos SSE: por cada item procesado emite un evento JSON
+        # con el progreso. La UI lo lee con fetch + ReadableStream.
+        fecha_inicio = request.form.get("fecha_inicio", "").strip()
+        fecha_fin = request.form.get("fecha_fin", "").strip()
+        tipo_value = request.form.get("tipo", "").strip()
+
+        def sse(payload: dict[str, Any]) -> str:
+            return "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+
+        def generar():
+            try:
+                if not fecha_inicio or not fecha_fin or not tipo_value:
+                    yield sse({"tipo": "error", "mensaje": "Faltan parametros."})
+                    return
+
+                if tipo_value == "venta_doble":
+                    rows_all, _ = service.consultar_venta_doble(
+                        fecha_inicio=_parse_date(fecha_inicio),
+                        fecha_fin=_parse_date(fecha_fin),
+                    )
+                    items: list[tuple[str, str]] = []
+                    for r in rows_all:
+                        tp = str(r[0]) if r[0] is not None else ""
+                        uid = str(r[1]) if r[1] is not None else ""
+                        if uid and tp:
+                            items.append((tp, uid))
+                elif tipo_value in ("pendientes", "ventas_nc"):
+                    rows_all, _ = service.consultar_por_enviar(
+                        fecha_inicio=_parse_date(fecha_inicio),
+                        fecha_fin=_parse_date(fecha_fin),
+                        tipo=tipo_value,
+                    )
+                    items = []
+                    for r in rows_all:
+                        if str(r[3]) == "5":
+                            continue
+                        id_mov = str(r[0]) if r[0] is not None else ""
+                        if id_mov.isdigit():
+                            items.append((id_mov, ""))
+                else:
+                    yield sse({"tipo": "error", "mensaje": f"Tipo no soportado: {tipo_value}"})
+                    return
+
+                total = len(items)
+                yield sse({"tipo": "inicio", "total": total})
+
+                enviados = 0
+                fallidos = 0
+                errores: list[str] = []
+                for i, item in enumerate(items, 1):
+                    try:
+                        if tipo_value == "venta_doble":
+                            tp, uid = item
+                            service.enviar_venta_doble(uid, tp)
+                        else:
+                            service.enviar_movimiento_por_enviar(int(item[0]))
+                        enviados += 1
+                    except Exception as exc:
+                        fallidos += 1
+                        if len(errores) < 5:
+                            etiqueta = item[1] or item[0]
+                            errores.append(f"{etiqueta}: {exc}")
+                    yield sse({
+                        "tipo": "progreso",
+                        "actual": i,
+                        "total": total,
+                        "enviados": enviados,
+                        "fallidos": fallidos,
+                    })
+
+                yield sse({
+                    "tipo": "fin",
+                    "total": total,
+                    "enviados": enviados,
+                    "fallidos": fallidos,
+                    "errores": errores,
+                })
+            except Exception as exc:
+                yield sse({"tipo": "error", "mensaje": str(exc)})
+
+        return Response(
+            stream_with_context(generar()),
+            content_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     @app.route("/por-enviar", methods=["GET", "POST"])
