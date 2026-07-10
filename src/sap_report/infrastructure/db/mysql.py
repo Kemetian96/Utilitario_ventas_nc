@@ -221,7 +221,7 @@ class MySQLRepository:
     _FILTROS_POR_ENVIAR = {
         "anuladas": "j.id_outbounds_statuses < 0",
         "pendientes": (
-            "t1.id_documents_movements_types NOT IN (13,14,15,9,10)"
+            "t1.id_documents_movements_types NOT IN (13,14,15,9,10,20,17)"
             " AND t1.id_documents_movements_statuses IN (1,2,3,4)"
             " AND (j.id_outbounds_statuses > 11 OR k.id_inbounds_statuses > 6)"
         ),
