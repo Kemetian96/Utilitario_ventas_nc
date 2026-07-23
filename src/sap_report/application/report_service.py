@@ -226,9 +226,14 @@ class ReportService:
         return self._sap_repository.ejecutar_validar_articulos(fecha_inicio, fecha_fin)
 
     def validar_igv(self, status_cb=None) -> dict[str, Any]:
-        # Rango para IGV: maximo ultimos 3 dias (usando > inicio y < fin).
+        # Rango para IGV: todo el mes en curso. Si hoy es del 1 al 5,
+        # se incluye tambien el mes anterior (usando > inicio y < fin).
         hoy = date.today()
-        fecha_inicio = hoy - timedelta(days=3)
+        inicio_mes = hoy.replace(day=1)
+        if hoy.day <= 5:
+            fecha_inicio = _add_months(inicio_mes, -1)
+        else:
+            fecha_inicio = inicio_mes
         fecha_fin = hoy + timedelta(days=1)
         upd_hilos = 0
         if status_cb:
