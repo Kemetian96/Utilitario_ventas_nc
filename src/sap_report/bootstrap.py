@@ -1,3 +1,5 @@
+import dataclasses
+
 from sap_report.application import ReportService
 from sap_report.infrastructure import Settings, load_settings
 from sap_report.infrastructure.db import MySQLRepository, PostgresRepository, SapHanaRepository, SapServiceLayerRepository
@@ -10,6 +12,21 @@ def build_service() -> tuple[Settings, ReportService]:
     settings = load_settings()
     sap_repository = SapHanaRepository(settings)
     postgres_repository = PostgresRepository(settings)
+    # Postgres Chile: solo si hay credenciales configuradas. Reusa la misma
+    # clase apuntando pg_* a las variables *_CHILE.
+    postgres_chile_repository = None
+    if settings.pg_host_chile:
+        settings_chile = dataclasses.replace(
+            settings,
+            pg_host=settings.pg_host_chile,
+            pg_name=settings.pg_name_chile or "main",
+            pg_user=settings.pg_user_chile,
+            pg_password=settings.pg_password_chile,
+            pg_port=settings.pg_port_chile or 5432,
+            pg_sslmode=settings.pg_sslmode_chile or "require",
+            pg_connect_timeout=settings.pg_connect_timeout_chile or 10,
+        )
+        postgres_chile_repository = PostgresRepository(settings_chile)
     mysql_repository = MySQLRepository(settings)
     sl_repository = SapServiceLayerRepository(
         url=settings.sl_url,
@@ -21,6 +38,7 @@ def build_service() -> tuple[Settings, ReportService]:
     service = ReportService(
         sap_repository=sap_repository,
         postgres_repository=postgres_repository,
+        postgres_chile_repository=postgres_chile_repository,
         mysql_repository=mysql_repository,
         sl_repository=sl_repository,
         mailer=mailer,

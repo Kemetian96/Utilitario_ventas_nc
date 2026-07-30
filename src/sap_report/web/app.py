@@ -131,6 +131,20 @@ MODULES = [
         "sidebar": True,
     },
     {
+        "page": "tickets",
+        "title": "Tickets",
+        "subtitle": "Tickets abiertos en TUTATI.",
+        "url": "/tickets",
+        "sidebar": True,
+    },
+    {
+        "page": "devoluciones",
+        "title": "Devoluciones",
+        "subtitle": "Solicitudes de devolución (RMA).",
+        "url": "/devoluciones",
+        "sidebar": True,
+    },
+    {
         "page": "revisar-hilos",
         "title": "Revisar hilos",
         "subtitle": "Consulta rápida de pendientes.",
@@ -1065,6 +1079,51 @@ def create_app() -> Flask:
         return render_template(
             "validacion_nubefact.html",
             current_page="validacion-nubefact",
+            rows=rows,
+            cols=cols,
+            error=error,
+        )
+
+    @app.get("/tickets")
+    @requiere_modulo("tickets")
+    def tickets() -> str:
+        rows: list[dict] = []
+        cols: list[str] = []
+        error: str | None = None
+        try:
+            rows, cols = service.consultar_tickets()
+        except Exception as exc:
+            error = str(exc)
+        return render_template(
+            "tickets.html",
+            current_page="tickets",
+            rows=rows,
+            cols=cols,
+            error=error,
+        )
+
+    @app.get("/api/tickets")
+    @requiere_modulo("tickets")
+    def api_tickets():
+        try:
+            rows, cols = service.consultar_tickets()
+            return jsonify({"rows": rows, "cols": cols})
+        except Exception as exc:
+            return jsonify({"rows": [], "cols": [], "error": str(exc)}), 200
+
+    @app.get("/devoluciones")
+    @requiere_modulo("devoluciones")
+    def devoluciones() -> str:
+        rows: list[dict] = []
+        cols: list[str] = []
+        error: str | None = None
+        try:
+            rows, cols = service.consultar_devoluciones()
+        except Exception as exc:
+            error = str(exc)
+        return render_template(
+            "devoluciones.html",
+            current_page="devoluciones",
             rows=rows,
             cols=cols,
             error=error,

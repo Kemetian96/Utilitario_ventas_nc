@@ -2,7 +2,8 @@
   "ATC": {
     "password_hash": "scrypt:32768:8:1$G9e4BSEXUiBwQWY3$40c864517241423b8b4872a72c773ae8fb0906b5f92c4a3f12a46749a016067f0064e2741feca34a19a64bcae38d060c491fd4503283917d5b2ec46d73f03467",
     "modulos": [
-      "orden-pago"
+      "orden-pago",
+      "devoluciones"
     ]
   },
   "SOPORTE1": {

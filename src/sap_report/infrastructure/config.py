@@ -67,6 +67,14 @@ class Settings:
     pg_port: int
     pg_sslmode: str
     pg_connect_timeout: int
+    # PostgreSQL Chile (opcional)
+    pg_host_chile: Optional[str]
+    pg_name_chile: Optional[str]
+    pg_user_chile: Optional[str]
+    pg_password_chile: Optional[str]
+    pg_port_chile: Optional[int]
+    pg_sslmode_chile: Optional[str]
+    pg_connect_timeout_chile: Optional[int]
     # SAP HANA
     sap_hana_host: str
     sap_hana_port: int
@@ -123,6 +131,13 @@ def load_settings() -> Settings:
         pg_port=int(_get_env_alias("PG_PORT", ["DB_PORT"], "5432")),
         pg_sslmode=_get_env_alias("PG_SSLMODE", ["DB_SSLMODE"], "require"),
         pg_connect_timeout=int(_get_env_alias("PG_CONNECT_TIMEOUT", ["DB_CONNECT_TIMEOUT"], "10")),
+        pg_host_chile=_get_optional_env("PG_HOST_CHILE"),
+        pg_name_chile=_get_optional_env("PG_NAME_CHILE"),
+        pg_user_chile=_get_optional_env("PG_USER_CHILE"),
+        pg_password_chile=_get_optional_env("PG_PASSWORD_CHILE"),
+        pg_port_chile=_get_optional_int("PG_PORT_CHILE"),
+        pg_sslmode_chile=_get_optional_env("PG_SSLMODE_CHILE"),
+        pg_connect_timeout_chile=_get_optional_int("PG_CONNECT_TIMEOUT_CHILE"),
         sap_hana_host=_get_env("SAP_HANA_HOST", "172.31.28.162"),
         sap_hana_port=int(_get_env("SAP_HANA_PORT", "30015")),
         sap_hana_user=_get_env("SAP_HANA_USER"),

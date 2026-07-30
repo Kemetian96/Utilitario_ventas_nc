@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Devoluciones | SAP Web{% endblock %}
+
+{% set etiquetas = {
+  "fecha": "Fecha",
+  "uid_rmas": "UID RMA",
+  "razon": "Razón",
+  "devolucion": "Devolución",
+  "country_document_type": "Tipo Doc.",
+  "document": "Documento",
+  "banco": "Banco",
+  "cliente": "Cliente",
+  "tipo_de_cuenta": "Tipo de Cuenta",
+  "numero_de_cuenta": "Número de Cuenta",
+  "metodo_de_pago": "Método de Pago",
+  "total": "Total",
+  "marca_de_tarjeta": "Marca de Tarjeta",
+  "prioridad": "Prioridad",
+  "uid_orders": "UID Orden",
+  "uid_tickets": "UID Ticket"
+} %}
+
+{% block content %}
+  <style>
+    .content { max-width: 100%; }
+
+    .dev-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .dev-meta { font-size: 0.78rem; color: var(--muted); }
+
+    .dev-table-wrap { overflow-x: auto; margin-top: 12px; }
+    .dev-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    .dev-table th {
+      padding: 8px 11px;
+      text-align: left;
+      border-bottom: 2px solid var(--line);
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+      position: sticky;
+      top: 0;
+      background: var(--surface);
+    }
+    .dev-table td {
+      padding: 7px 11px;
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    .dev-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+    .dev-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    .dev-empty {
+      padding: 14px;
+      color: var(--muted);
+      font-size: 0.86rem;
+      text-align: center;
+    }
+  </style>
+
+  <section class="panel">
+    <div class="dev-head">
+      <span class="section-label" style="margin-bottom:0;">Devoluciones · RMA</span>
+      <span class="dev-meta">{{ rows | length }} registro(s)</span>
+    </div>
+
+    {% if error %}
+      <div class="alert error">{{ error }}</div>
+    {% else %}
+      <div class="dev-table-wrap">
+        <table class="dev-table">
+          <thead>
+            <tr>
+              {% for col in cols %}
+                <th>{{ etiquetas.get(col, col.replace('_', ' ') | title) }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% if rows %}
+              {% for row in rows %}
+                <tr>
+                  {% for col in cols %}
+                    <td class="{{ 'num' if col == 'total' else '' }}">{{ row.get(col, '') }}</td>
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            {% else %}
+              <tr><td colspan="{{ cols | length or 1 }}" class="dev-empty">Sin devoluciones pendientes.</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

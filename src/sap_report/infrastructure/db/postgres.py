@@ -21,6 +21,8 @@ MIGRAR_OC_PATH = _QUERIES_DIR / "migrar_oc.sql"
 DATOS_PAGO_PATH = _QUERIES_DIR / "datos_pago.sql"
 DATOS_RMA_PATH = _QUERIES_DIR / "datos_rma.sql"
 ORDEN_PAGO_PATH = _QUERIES_DIR / "orden_pago.sql"
+TICKETS_PATH = _QUERIES_DIR / "tickets.sql"
+DEVOLUCIONES_PATH = _QUERIES_DIR / "devoluciones.sql"
 
 
 class PostgresRepository:
@@ -32,6 +34,8 @@ class PostgresRepository:
         self._query_datos_pago = DATOS_PAGO_PATH.read_text(encoding="utf-8")
         self._query_datos_rma = DATOS_RMA_PATH.read_text(encoding="utf-8")
         self._query_orden_pago = ORDEN_PAGO_PATH.read_text(encoding="utf-8")
+        self._query_tickets = TICKETS_PATH.read_text(encoding="utf-8")
+        self._query_devoluciones = DEVOLUCIONES_PATH.read_text(encoding="utf-8")
         # Conexion persistente opcional. Cuando _sesion_activa es True, las
         # queries reusan self._conn en lugar de abrir/cerrar una nueva cada vez.
         # Si la conexion muere, se reabre automaticamente dentro de la sesion.
@@ -132,6 +136,36 @@ class PostgresRepository:
             cur = conn.cursor()
             cur.execute("SET statement_timeout = 0")
             cur.execute(query, tuple(uids))
+            rows = cur.fetchall()
+            cols = [c[0] for c in cur.description] if cur.description else []
+            return rows, cols
+        finally:
+            if cur:
+                try:
+                    cur.close()
+                except Exception:
+                    pass
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    def consultar_tickets(self) -> tuple[list[tuple[Any, ...]], list[str]]:
+        return self._ejecutar_sin_params(self._query_tickets)
+
+    def consultar_devoluciones(self) -> tuple[list[tuple[Any, ...]], list[str]]:
+        return self._ejecutar_sin_params(self._query_devoluciones)
+
+    def _ejecutar_sin_params(self, query: str) -> tuple[list[tuple[Any, ...]], list[str]]:
+        conn = None
+        cur = None
+        try:
+            conn = self._connect(keepalives=True)
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute("SET statement_timeout = 0")
+            cur.execute(query)
             rows = cur.fetchall()
             cols = [c[0] for c in cur.description] if cur.description else []
             return rows, cols

@@ -32,10 +32,12 @@ class ReportService:
         sap_output_path: Path,
         postgres_output_path: Path,
         comparacion_output_path: Path,
+        postgres_chile_repository: PostgresRepository | None = None,
     ) -> None:
         # Dependencias de acceso a datos y rutas de salida.
         self._sap_repository = sap_repository
         self._postgres_repository = postgres_repository
+        self._postgres_chile_repository = postgres_chile_repository
         self._mysql_repository = mysql_repository
         self._sl_repository = sl_repository
         self._mailer = mailer
@@ -684,6 +686,48 @@ class ReportService:
                 row_dict[estado] = pivot.get(fecha, {}).get(estado, "")
             result_rows.append(row_dict)
         return result_rows, cols
+
+    def consultar_tickets(self) -> tuple[list[dict[str, Any]], list[str]]:
+        rows, cols = self._postgres_repository.consultar_tickets()
+        result = self._construir_filas_tickets(rows, cols, "pe")
+
+        # Chile: misma consulta contra su Postgres; se anexa al resultado.
+        if self._postgres_chile_repository is not None:
+            try:
+                rows_cl, cols_cl = self._postgres_chile_repository.consultar_tickets()
+                result += self._construir_filas_tickets(rows_cl, cols_cl or cols, "cl")
+            except Exception as exc:
+                LOGGER.warning("Consulta de tickets Chile fallo: %s", exc)
+
+        # Orden global por fecha descendente (el string YYYY-MM-DD... ordena bien).
+        result.sort(key=lambda f: f.get("fecha", ""), reverse=True)
+        return result, cols
+
+    def consultar_devoluciones(self) -> tuple[list[dict[str, Any]], list[str]]:
+        rows, cols = self._postgres_repository.consultar_devoluciones()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            fila: dict[str, Any] = {}
+            for i, col in enumerate(cols):
+                val = row[i] if i < len(row) else None
+                fila[col] = "" if val is None else str(val).strip()
+            result.append(fila)
+        return result, cols
+
+    @staticmethod
+    def _construir_filas_tickets(
+        rows: list[tuple[Any, ...]],
+        cols: list[str],
+        pais: str,
+    ) -> list[dict[str, Any]]:
+        salida: list[dict[str, Any]] = []
+        for row in rows:
+            fila: dict[str, Any] = {"_pais": pais}
+            for i, col in enumerate(cols):
+                val = row[i] if i < len(row) else None
+                fila[col] = "" if val is None else str(val).strip()
+            salida.append(fila)
+        return salida
 
     def validar_pagos(
         self,
