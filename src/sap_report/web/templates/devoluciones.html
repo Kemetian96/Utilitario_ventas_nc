@@ -57,6 +57,13 @@
     }
     .dev-table tbody tr:hover { background: rgba(255,255,255,0.03); }
     .dev-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .dev-table th.col-razon,
+    .dev-table td.col-razon {
+      white-space: normal;
+      max-width: 240px;
+      min-width: 160px;
+      word-break: break-word;
+    }
 
     .dev-empty {
       padding: 14px;
@@ -80,7 +87,7 @@
           <thead>
             <tr>
               {% for col in cols %}
-                <th>{{ etiquetas.get(col, col.replace('_', ' ') | title) }}</th>
+                <th class="{{ 'col-razon' if col == 'razon' else '' }}">{{ etiquetas.get(col, col.replace('_', ' ') | title) }}</th>
               {% endfor %}
             </tr>
           </thead>
@@ -89,7 +96,7 @@
               {% for row in rows %}
                 <tr>
                   {% for col in cols %}
-                    <td class="{{ 'num' if col == 'total' else '' }}">{{ row.get(col, '') }}</td>
+                    <td class="{{ 'num' if col == 'total' else ('col-razon' if col == 'razon' else '') }}">{{ row.get(col, '') }}</td>
                   {% endfor %}
                 </tr>
               {% endfor %}
