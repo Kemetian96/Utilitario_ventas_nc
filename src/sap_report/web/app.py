@@ -1094,10 +1094,15 @@ def create_app() -> Flask:
             rows, cols = service.consultar_tickets()
         except Exception as exc:
             error = str(exc)
+        # "Creado" = sin agente asignado; el resto ya tiene responsable.
+        sin_asignar = [r for r in rows if not str(r.get("asignado", "")).strip()]
+        asignados = [r for r in rows if str(r.get("asignado", "")).strip()]
         return render_template(
             "tickets.html",
             current_page="tickets",
             rows=rows,
+            sin_asignar=sin_asignar,
+            asignados=asignados,
             cols=cols,
             error=error,
         )

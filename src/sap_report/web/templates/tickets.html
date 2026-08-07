@@ -73,6 +73,47 @@
       font-size: 0.86rem;
       text-align: center;
     }
+
+    .tickets-tabs {
+      display: flex;
+      gap: 2px;
+      margin-top: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .tab-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      cursor: pointer;
+      color: var(--muted);
+      font-family: inherit;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active {
+      color: var(--text);
+      border-bottom-color: var(--accent);
+    }
+    .tickets-group[hidden] { display: none; }
+    .group-count {
+      display: inline-block;
+      min-width: 20px;
+      text-align: center;
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 700;
+    }
+    .group-count.pend { background: rgba(251,191,36,0.16); color: var(--warn); }
+    .group-count.done { background: rgba(74,222,128,0.14); color: var(--ok); }
   </style>
 
   <section class="panel">
@@ -87,46 +128,90 @@
 
     <div class="alert error" id="tickets-error" {% if not error %}hidden{% endif %}>{{ error or "" }}</div>
 
-    <div class="tickets-table-wrap">
-      <table class="tickets-table">
-        <thead>
-          <tr>
-            <th>UID Ticket</th>
-            <th>Asunto</th>
-            <th>Usuario</th>
-            <th>Asignado</th>
-            <th>Fecha</th>
-          </tr>
-        </thead>
-        <tbody id="tickets-body">
-          {% if rows %}
-            {% for row in rows %}
-              <tr>
-                <td>
-                  <span class="pais-badge {{ row.get('_pais', 'pe') }}">{{ row.get('_pais', 'pe') | upper }}</span>
-                  <a class="ticket-link" target="_blank" rel="noopener"
-                     href="https://tutati.com/{{ row.get('_pais', 'pe') }}/tickets/detail?uid_tickets={{ row.get('uid_tickets', '') }}&tab=detail">
-                    {{ row.get('uid_tickets', '') }}
-                  </a>
-                </td>
-                <td class="col-asunto">{{ row.get('asunto', '') }}</td>
-                <td>{{ row.get('usuario', '') }}</td>
-                <td>{{ row.get('asignado', '') }}</td>
-                <td>{{ row.get('fecha', '') }}</td>
-              </tr>
-            {% endfor %}
-          {% else %}
-            <tr><td colspan="5" class="tickets-empty">Sin tickets abiertos.</td></tr>
-          {% endif %}
-        </tbody>
-      </table>
+    {% macro fila_ticket(row, con_asignado) %}
+      <tr>
+        <td>
+          <span class="pais-badge {{ row.get('_pais', 'pe') }}">{{ row.get('_pais', 'pe') | upper }}</span>
+          <a class="ticket-link" target="_blank" rel="noopener"
+             href="https://tutati.com/{{ row.get('_pais', 'pe') }}/tickets/detail?uid_tickets={{ row.get('uid_tickets', '') }}&tab=detail">
+            {{ row.get('uid_tickets', '') }}
+          </a>
+        </td>
+        <td class="col-asunto">{{ row.get('asunto', '') }}</td>
+        <td>{{ row.get('usuario', '') }}</td>
+        {% if con_asignado %}<td>{{ row.get('asignado', '') }}</td>{% endif %}
+        <td>{{ row.get('fecha', '') }}</td>
+      </tr>
+    {% endmacro %}
+
+    <div class="tickets-tabs" role="tablist">
+      <button type="button" class="tab-btn active" data-tab="sin-asignar" role="tab" aria-selected="true">
+        Creados · sin asignar
+        <span class="group-count pend" id="count-sin-asignar">{{ sin_asignar | length }}</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="asignados" role="tab" aria-selected="false">
+        Asignados
+        <span class="group-count done" id="count-asignados">{{ asignados | length }}</span>
+      </button>
+    </div>
+
+    <div class="tickets-group" data-panel="sin-asignar">
+      <div class="tickets-table-wrap">
+        <table class="tickets-table">
+          <thead>
+            <tr>
+              <th>UID Ticket</th>
+              <th>Asunto</th>
+              <th>Usuario</th>
+              <th>Fecha</th>
+            </tr>
+          </thead>
+          <tbody id="body-sin-asignar">
+            {% if sin_asignar %}
+              {% for row in sin_asignar %}{{ fila_ticket(row, false) }}{% endfor %}
+            {% else %}
+              <tr><td colspan="4" class="tickets-empty">Ninguno sin asignar.</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tickets-group" data-panel="asignados" hidden>
+      <div class="tickets-table-wrap">
+        <table class="tickets-table">
+          <thead>
+            <tr>
+              <th>UID Ticket</th>
+              <th>Asunto</th>
+              <th>Usuario</th>
+              <th>Asignado</th>
+              <th>Fecha</th>
+            </tr>
+          </thead>
+          <tbody id="body-asignados">
+            {% if asignados %}
+              {% for row in asignados %}{{ fila_ticket(row, true) }}{% endfor %}
+            {% else %}
+              <tr><td colspan="5" class="tickets-empty">Ninguno asignado.</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
     </div>
   </section>
 
   <script>
     (function () {
       var REFRESH_MS = 5 * 60 * 1000;  // 5 minutos
-      var body      = document.getElementById("tickets-body");
+      var GRUPOS = {
+        sin:  { body: document.getElementById("body-sin-asignar"),
+                count: document.getElementById("count-sin-asignar"),
+                cols: 4, vacio: "Ninguno sin asignar." },
+        asig: { body: document.getElementById("body-asignados"),
+                count: document.getElementById("count-asignados"),
+                cols: 5, vacio: "Ninguno asignado." }
+      };
       var countEl   = document.getElementById("tickets-count");
       var updatedEl = document.getElementById("tickets-updated");
       var errorEl   = document.getElementById("tickets-error");
@@ -138,29 +223,43 @@
           .replace(/"/g, "&quot;");
       }
 
-      function render(rows) {
-        if (!rows || rows.length === 0) {
-          body.innerHTML = '<tr><td colspan="5" class="tickets-empty">Sin tickets abiertos.</td></tr>';
-          countEl.textContent = "0";
+      function filaHtml(r, conAsignado) {
+        var uid  = r.uid_tickets || "";
+        var pais = r._pais || "pe";
+        var url  = "https://tutati.com/" + pais + "/tickets/detail?uid_tickets="
+                 + encodeURIComponent(uid) + "&tab=detail";
+        return "<tr>"
+          + '<td><span class="pais-badge ' + pais + '">' + esc(pais.toUpperCase()) + "</span>"
+          + '<a class="ticket-link" target="_blank" rel="noopener" href="' + url + '">'
+          + esc(uid) + "</a></td>"
+          + '<td class="col-asunto">' + esc(r.asunto) + "</td>"
+          + "<td>" + esc(r.usuario) + "</td>"
+          + (conAsignado ? "<td>" + esc(r.asignado) + "</td>" : "")
+          + "<td>" + esc(r.fecha) + "</td>"
+          + "</tr>";
+      }
+
+      function pintar(grupo, filas, conAsignado) {
+        grupo.count.textContent = filas.length;
+        if (filas.length === 0) {
+          grupo.body.innerHTML = '<tr><td colspan="' + grupo.cols
+                               + '" class="tickets-empty">' + grupo.vacio + "</td></tr>";
           return;
         }
-        var html = "";
+        grupo.body.innerHTML = filas.map(function (r) {
+          return filaHtml(r, conAsignado);
+        }).join("");
+      }
+
+      function render(rows) {
+        rows = rows || [];
+        var sinAsignar = [], asignados = [];
         rows.forEach(function (r) {
-          var uid  = r.uid_tickets || "";
-          var pais = r._pais || "pe";
-          var url  = "https://tutati.com/" + pais + "/tickets/detail?uid_tickets="
-                   + encodeURIComponent(uid) + "&tab=detail";
-          html += "<tr>"
-            + '<td><span class="pais-badge ' + pais + '">' + esc(pais.toUpperCase()) + "</span>"
-            + '<a class="ticket-link" target="_blank" rel="noopener" href="' + url + '">'
-            + esc(uid) + "</a></td>"
-            + '<td class="col-asunto">' + esc(r.asunto) + "</td>"
-            + "<td>" + esc(r.usuario) + "</td>"
-            + "<td>" + esc(r.asignado) + "</td>"
-            + "<td>" + esc(r.fecha) + "</td>"
-            + "</tr>";
+          // "Creado" = sin agente asignado.
+          (String(r.asignado || "").trim() ? asignados : sinAsignar).push(r);
         });
-        body.innerHTML = html;
+        pintar(GRUPOS.sin, sinAsignar, false);
+        pintar(GRUPOS.asig, asignados, true);
         countEl.textContent = rows.length;
       }
 
@@ -186,6 +285,28 @@
           .catch(function () { /* mantiene la última tabla visible */ })
           .finally(function () { liveDot.classList.remove("updating"); });
       }
+
+      // Pestañas: recuerda la última elegida en este navegador.
+      var tabs   = [].slice.call(document.querySelectorAll(".tab-btn"));
+      var panels = [].slice.call(document.querySelectorAll(".tickets-group"));
+
+      function activar(nombre) {
+        tabs.forEach(function (b) {
+          var on = b.dataset.tab === nombre;
+          b.classList.toggle("active", on);
+          b.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        panels.forEach(function (p) { p.hidden = p.dataset.panel !== nombre; });
+        try { localStorage.setItem("tickets-tab", nombre); } catch (e) { /* sin storage */ }
+      }
+
+      tabs.forEach(function (b) {
+        b.addEventListener("click", function () { activar(b.dataset.tab); });
+      });
+
+      var guardada;
+      try { guardada = localStorage.getItem("tickets-tab"); } catch (e) { guardada = null; }
+      if (guardada === "asignados" || guardada === "sin-asignar") activar(guardada);
 
       stamp();
       setInterval(refresh, REFRESH_MS);
