@@ -3,6 +3,265 @@
 {% block title %}Ejecutar Reporte | SAP Web{% endblock %}
 
 {% block content %}
+  <style>
+    .cmp-tabs {
+      display: flex;
+      gap: 2px;
+      border-bottom: 1px solid var(--line);
+      margin-top: 4px;
+    }
+    .cmp-tab {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      cursor: pointer;
+      color: var(--muted);
+      font-family: inherit;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .cmp-tab:hover { color: var(--text); }
+    .cmp-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+    .cmp-panel[hidden] { display: none; }
+
+    .cmp-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin: 16px 0 4px;
+    }
+    .cmp-tile {
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel-2);
+    }
+    .cmp-tile span {
+      display: block;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    .cmp-tile strong { font-size: 1.35rem; font-weight: 700; }
+    .cmp-tile.alerta strong { color: var(--warn); }
+    .cmp-tile.limpio strong { color: var(--ok); }
+
+    .cmp-block { margin-top: 20px; }
+    .cmp-block-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .cmp-block-title {
+      font-size: 0.74rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+    }
+    .cmp-block-count {
+      min-width: 20px;
+      text-align: center;
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      background: rgba(251,191,36,0.16);
+      color: var(--warn);
+    }
+    .cmp-block-count.cero { background: rgba(74,222,128,0.14); color: var(--ok); }
+
+    .cmp-table-wrap { overflow-x: auto; }
+    .cmp-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    .cmp-table th {
+      padding: 7px 12px;
+      text-align: left;
+      border-bottom: 2px solid var(--line);
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+    }
+    .cmp-table td {
+      padding: 7px 12px;
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    .cmp-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+    .cmp-table td.num { text-align: right; font-family: "Consolas", "Segoe UI Mono", monospace; }
+    .cmp-table td.num.neg { color: var(--bad); }
+    .cmp-table td.num.pos { color: var(--warn); }
+
+    .cmp-badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 6px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .cmp-badge.sap    { background: rgba(248,113,113,0.16); color: var(--bad); }
+    .cmp-badge.tutati { background: rgba(124,156,255,0.16); color: var(--accent); }
+    .cmp-badge.orin   { background: rgba(251,191,36,0.16);  color: var(--warn); }
+
+    .cmp-ok {
+      padding: 10px 0;
+      color: var(--ok);
+      font-size: 0.84rem;
+    }
+  </style>
+
+  {% macro bloque_tabla(titulo, filas, vacio) %}
+    <div class="cmp-block">
+      <div class="cmp-block-head">
+        <span class="cmp-block-title">{{ titulo }}</span>
+        <span class="cmp-block-count {% if not filas %}cero{% endif %}">{{ filas | length }}</span>
+      </div>
+      {% if filas %}
+        <div class="cmp-table-wrap">{{ caller() }}</div>
+      {% else %}
+        <p class="cmp-ok">{{ vacio }}</p>
+      {% endif %}
+    </div>
+  {% endmacro %}
+
+  {% macro panel_comparacion(data, es_nc) %}
+    <div class="cmp-summary">
+      <div class="cmp-tile">
+        <span>Filas SAP</span><strong>{{ data.resumen.sap }}</strong>
+      </div>
+      <div class="cmp-tile">
+        <span>Filas TUTATI</span><strong>{{ data.resumen.tutati }}</strong>
+      </div>
+      <div class="cmp-tile {% if data.resumen.faltan_en_sap %}alerta{% else %}limpio{% endif %}">
+        <span>Faltan en SAP</span><strong>{{ data.resumen.faltan_en_sap }}</strong>
+      </div>
+      <div class="cmp-tile {% if data.resumen.faltan_en_tutati %}alerta{% else %}limpio{% endif %}">
+        <span>Faltan en TUTATI</span><strong>{{ data.resumen.faltan_en_tutati }}</strong>
+      </div>
+    </div>
+
+    {% call bloque_tabla("Faltantes", data.faltantes, "Sin faltantes: todo cruza en ambos lados.") %}
+      <table class="cmp-table">
+        <thead>
+          <tr><th>Tipo</th><th>Documento SAP</th><th>UID TUTATI</th><th>Fecha</th></tr>
+        </thead>
+        <tbody>
+          {% for f in data.faltantes %}
+            <tr>
+              <td>
+                <span class="cmp-badge {% if f.tipo_faltante == 'FALTA_EN_SAP' %}sap{% else %}tutati{% endif %}">
+                  {{ f.tipo_faltante }}
+                </span>
+              </td>
+              <td>{{ f.sap }}</td>
+              <td>{{ f.tutati }}</td>
+              <td>{{ f.fecha }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endcall %}
+
+    {% call bloque_tabla("Diferencias de monto", data.diferencias, "Sin diferencias de monto sobre 0.12.") %}
+      <table class="cmp-table">
+        <thead>
+          <tr>
+            <th>Documento SAP</th><th>UID TUTATI</th><th>Fecha</th>
+            <th style="text-align:right;">Suma SAP</th>
+            <th style="text-align:right;">Total TUTATI</th>
+            <th style="text-align:right;">Diferencia</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in data.diferencias %}
+            <tr>
+              <td>{{ d.u_bot_docentry }}</td>
+              <td>{{ d.uid_orders }}</td>
+              <td>{{ d.fecha }}</td>
+              <td class="num">{{ "%.2f" | format(d.suma_sap) }}</td>
+              <td class="num">{{ "%.2f" | format(d.total_tutati) }}</td>
+              <td class="num {% if d.diferencia < 0 %}neg{% else %}pos{% endif %}">
+                {{ "%.2f" | format(d.diferencia) }}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endcall %}
+
+    {% if es_nc %}
+      {% call bloque_tabla("Validación NC · no están en ORIN", data.validacion_nc, "Todas las NC existen en ORIN.") %}
+        <table class="cmp-table">
+          <thead>
+            <tr><th>Documento SAP</th><th>Fecha</th><th>Estado</th></tr>
+          </thead>
+          <tbody>
+            {% for v in data.validacion_nc %}
+              <tr>
+                <td>{{ v.u_bot_docentry }}</td>
+                <td>{{ v.fecha }}</td>
+                <td><span class="cmp-badge orin">{{ v.diferencia }}</span></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endcall %}
+    {% endif %}
+  {% endmacro %}
+
+  {% macro bloque_comparaciones(result) %}
+    <section class="panel">
+      <span class="section-label">Comparación SAP vs TUTATI</span>
+
+      <div class="cmp-tabs" role="tablist">
+        <button type="button" class="cmp-tab active" data-cmp-tab="ventas" role="tab">Ventas</button>
+        <button type="button" class="cmp-tab" data-cmp-tab="nc" role="tab">Notas de crédito</button>
+      </div>
+
+      <div class="cmp-panel" data-cmp-panel="ventas">
+        {% if result.comparacion %}
+          {{ panel_comparacion(result.comparacion, false) }}
+        {% else %}
+          <div class="alert error" style="margin-top:14px;">
+            {{ result.comparacion_error or "Comparación no disponible." }}
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="cmp-panel" data-cmp-panel="nc" hidden>
+        {% if result.comparacion_nc %}
+          {{ panel_comparacion(result.comparacion_nc, true) }}
+        {% else %}
+          <div class="alert error" style="margin-top:14px;">
+            {{ result.comparacion_nc_error or "Comparación NC no disponible." }}
+          </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <script>
+      (function () {
+        var tabs   = [].slice.call(document.querySelectorAll(".cmp-tab"));
+        var panels = [].slice.call(document.querySelectorAll(".cmp-panel"));
+        tabs.forEach(function (b) {
+          b.addEventListener("click", function () {
+            tabs.forEach(function (x) { x.classList.toggle("active", x === b); });
+            panels.forEach(function (p) {
+              p.hidden = p.dataset.cmpPanel !== b.dataset.cmpTab;
+            });
+          });
+        });
+      })();
+    </script>
+  {% endmacro %}
+
   <section class="panel">
     <form method="post" data-loading-text="Generando archivos Excel. Esto puede tardar.">
       <div class="form-grid">
@@ -61,5 +320,9 @@
         {% endfor %}
       </div>
     </section>
+
+    {% if result.comparacion or result.comparacion_nc %}
+      {{ bloque_comparaciones(result) }}
+    {% endif %}
   {% endif %}
 {% endblock %}

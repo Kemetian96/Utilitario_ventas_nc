@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block title %}Resolución RMA | SAP Web{% endblock %}
+
+{% block content %}
+  <style>
+    .content { max-width: 100%; }
+
+    .res-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .res-meta { font-size: 0.78rem; color: var(--muted); }
+    .res-meta strong { color: var(--text); }
+
+    .res-tabs {
+      display: flex;
+      gap: 2px;
+      margin-top: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .res-tab {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      cursor: pointer;
+      color: var(--muted);
+      font-family: inherit;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .res-tab:hover { color: var(--text); }
+    .res-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+    .res-tab .cuenta-count {
+      min-width: 20px;
+      text-align: center;
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      background: rgba(124,156,255,0.16);
+      color: var(--accent);
+    }
+    .res-panel[hidden] { display: none; }
+
+    .res-table-wrap { overflow-x: auto; margin-top: 12px; }
+    .res-table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+    .res-table th {
+      padding: 8px 11px;
+      text-align: left;
+      border-bottom: 2px solid var(--line);
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+      position: sticky;
+      top: 0;
+      background: var(--surface);
+    }
+    .res-table td {
+      padding: 7px 11px;
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    .res-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+    .res-table td.col-comentario { white-space: normal; min-width: 200px; max-width: 380px; }
+    .res-table td.uid { font-family: "Consolas", "Segoe UI Mono", monospace; }
+
+    .sin-dato { color: var(--muted); font-style: italic; }
+    .res-badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 6px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      background: rgba(251,191,36,0.16);
+      color: var(--warn);
+      font-style: normal;
+    }
+
+    .res-table td.col-mensaje { white-space: normal; min-width: 330px; max-width: 480px; }
+    .msg-texto {
+      white-space: pre-line;
+      max-height: 88px;
+      overflow-y: auto;
+      padding: 7px 9px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-2);
+      font-size: 0.76rem;
+      line-height: 1.45;
+    }
+    .msg-copiar {
+      margin-top: 5px;
+      padding: 3px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: none;
+      color: var(--muted);
+      font-family: inherit;
+      font-size: 0.7rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .msg-copiar:hover { color: var(--text); border-color: var(--line-strong); }
+    .msg-copiar.hecho { color: var(--ok); border-color: rgba(74,222,128,0.4); }
+
+    .res-empty {
+      padding: 14px;
+      color: var(--muted);
+      font-size: 0.86rem;
+      text-align: center;
+    }
+  </style>
+
+  {% set SIN = "No tiene resolución" %}
+  {% set a_cuenta = rows | selectattr('_a_cuenta') | list %}
+  {% set a_tarjeta = rows | rejectattr('_a_cuenta') | list %}
+
+  {% macro tabla_resolucion(filas, con_banco, vacio) %}
+    <div class="res-table-wrap">
+      <table class="res-table">
+        <thead>
+          <tr>
+            <th>Fecha ticket</th>
+            <th>UID Ticket</th>
+            <th>UID Orden</th>
+            <th>UID RMA</th>
+            <th>Cliente</th>
+            {% if con_banco %}<th>Banco</th>{% endif %}
+            <th>Fecha resolución</th>
+            <th>Comentario</th>
+            <th>Mensaje de respuesta</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if filas %}
+            {% for row in filas %}
+              <tr>
+                <td>{{ row.fecha }}</td>
+                <td class="uid">{{ row.uid_tickets }}</td>
+                <td class="uid {% if row.uid_orders == SIN %}sin-dato{% endif %}">{{ row.uid_orders }}</td>
+                <td class="uid {% if row.uid_rmas == SIN %}sin-dato{% endif %}">{{ row.uid_rmas }}</td>
+                <td class="{% if row.cliente == '—' %}sin-dato{% endif %}">{{ row.cliente }}</td>
+                {% if con_banco %}<td>{{ row.banco }}</td>{% endif %}
+                <td>
+                  {% if row._resuelto %}
+                    {{ row.fecha_resolucion }}
+                  {% else %}
+                    <span class="res-badge">{{ SIN }}</span>
+                  {% endif %}
+                </td>
+                <td class="col-comentario {% if not row._resuelto %}sin-dato{% endif %}">{{ row.comentario }}</td>
+                <td class="col-mensaje">
+                  {% if row._resuelto %}
+                    <div class="msg-texto">{{ row.mensaje }}</div>
+                    <button type="button" class="msg-copiar">Copiar</button>
+                  {% else %}
+                    <span class="sin-dato">{{ SIN }}</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="{{ 9 if con_banco else 8 }}" class="res-empty">{{ vacio }}</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  {% endmacro %}
+
+  <section class="panel">
+    <div class="res-head">
+      <span class="section-label" style="margin-bottom:0;">Resolución de RMA</span>
+      <span class="res-meta">
+        <strong>{{ rows | length }}</strong> registro(s) ·
+        <strong>{{ rows | selectattr('_resuelto') | list | length }}</strong> resueltos ·
+        <strong>{{ rows | rejectattr('_resuelto') | list | length }}</strong> sin resolución
+      </span>
+    </div>
+
+    {% if error %}
+      <div class="alert error">{{ error }}</div>
+    {% else %}
+      <div class="res-tabs" role="tablist">
+        <button type="button" class="res-tab active" data-res-tab="cuenta" role="tab">
+          A cuenta <span class="cuenta-count">{{ a_cuenta | length }}</span>
+        </button>
+        <button type="button" class="res-tab" data-res-tab="tarjeta" role="tab">
+          A tarjeta <span class="cuenta-count">{{ a_tarjeta | length }}</span>
+        </button>
+      </div>
+
+      <div class="res-panel" data-res-panel="cuenta">
+        {{ tabla_resolucion(a_cuenta, true, "Sin devoluciones a cuenta.") }}
+      </div>
+
+      <div class="res-panel" data-res-panel="tarjeta" hidden>
+        {{ tabla_resolucion(a_tarjeta, false, "Sin devoluciones a tarjeta.") }}
+      </div>
+    {% endif %}
+  </section>
+
+  <script>
+    (function () {
+      var tabs   = [].slice.call(document.querySelectorAll(".res-tab"));
+      var panels = [].slice.call(document.querySelectorAll(".res-panel"));
+      tabs.forEach(function (b) {
+        b.addEventListener("click", function () {
+          tabs.forEach(function (x) { x.classList.toggle("active", x === b); });
+          panels.forEach(function (p) {
+            p.hidden = p.dataset.resPanel !== b.dataset.resTab;
+          });
+        });
+      });
+
+      function copiar(texto) {
+        // La API de portapapeles solo existe en HTTPS; la app corre en HTTP,
+        // asi que el camino real es el textarea temporal.
+        if (navigator.clipboard && window.isSecureContext) {
+          return navigator.clipboard.writeText(texto);
+        }
+        var ta = document.createElement("textarea");
+        ta.value = texto;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+          document.execCommand("copy");
+        } finally {
+          document.body.removeChild(ta);
+        }
+        return Promise.resolve();
+      }
+
+      [].slice.call(document.querySelectorAll(".msg-copiar")).forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var texto = btn.parentElement.querySelector(".msg-texto").textContent;
+          Promise.resolve(copiar(texto)).then(function () {
+            btn.textContent = "Copiado";
+            btn.classList.add("hecho");
+            setTimeout(function () {
+              btn.textContent = "Copiar";
+              btn.classList.remove("hecho");
+            }, 1500);
+          });
+        });
+      });
+    })();
+  </script>
+{% endblock %}

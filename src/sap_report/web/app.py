@@ -138,6 +138,13 @@ MODULES = [
         "sidebar": True,
     },
     {
+        "page": "resolucion-rma",
+        "title": "Resolución RMA",
+        "subtitle": "Devoluciones y su fecha de resolución.",
+        "url": "/resolucion-rma",
+        "sidebar": True,
+    },
+    {
         "page": "devoluciones",
         "title": "Devoluciones",
         "subtitle": "Solicitudes de devolución (RMA).",
@@ -1129,6 +1136,24 @@ def create_app() -> Flask:
         return render_template(
             "devoluciones.html",
             current_page="devoluciones",
+            rows=rows,
+            cols=cols,
+            error=error,
+        )
+
+    @app.get("/resolucion-rma")
+    @requiere_modulo("resolucion-rma")
+    def resolucion_rma() -> str:
+        rows: list[dict] = []
+        cols: list[str] = []
+        error: str | None = None
+        try:
+            rows, cols = service.consultar_resolucion_rmas()
+        except Exception as exc:
+            error = str(exc)
+        return render_template(
+            "resolucion_rma.html",
+            current_page="resolucion-rma",
             rows=rows,
             cols=cols,
             error=error,

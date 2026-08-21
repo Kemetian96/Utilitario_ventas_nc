@@ -1,4 +1,4 @@
-select t1.uid_tickets , t1.subject as Asunto ,t2.first_name as Usuario, t3.first_name as Asignado , main.f_u_cuid_to_datetime_v1(t1.cuid_inserted) as Fecha
+select t1.uid_tickets , t1.subject as Asunto ,t2.first_name as Usuario, t3.first_name as Asignado , main.f_u_cuid_to_datetime_v1(t1.cuid_inserted) - interval '5 hours' as Fecha
 from main.t_tickets t1 
 left join main.t_users t2 on t1.id_users_inserted =t2.id_users
 left join main.t_users t3 on t1.id_users_agents =t3.id_users

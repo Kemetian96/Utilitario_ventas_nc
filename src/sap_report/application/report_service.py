@@ -50,7 +50,7 @@ class ReportService:
         fecha_inicio_date: date,
         fecha_fin_date: date,
         status_cb=None,
-    ) -> dict[str, int | str | None]:
+    ) -> dict[str, Any]:
         # Validacion basica del rango (inicio no puede ser mayor al fin).
         if fecha_inicio_date > fecha_fin_date:
             raise ValueError("La fecha inicio no puede ser mayor a la fecha fin.")
@@ -139,11 +139,13 @@ class ReportService:
         # Genera comparacion solo si ambas fuentes se exportaron sin error.
         comparacion_error: str | None = None
         comparacion_nc_error: str | None = None
+        comparacion_data: dict[str, Any] | None = None
+        comparacion_nc_data: dict[str, Any] | None = None
         if (not sap_error) and (not pg_error) and sap_cols and pg_cols:
             try:
                 LOGGER.info("Comparacion: inicio")
                 t0 = time.perf_counter()
-                self._generar_comparacion(
+                comparacion_data = self._generar_comparacion(
                     sap_rows,
                     sap_cols,
                     pg_rows,
@@ -162,7 +164,7 @@ class ReportService:
             try:
                 LOGGER.info("Comparacion_NC: inicio")
                 t0 = time.perf_counter()
-                self._generar_comparacion(
+                comparacion_nc_data = self._generar_comparacion(
                     sap_nc_rows,
                     sap_nc_cols,
                     pg_nc_rows,
@@ -186,6 +188,8 @@ class ReportService:
             "postgres_error": pg_error,
             "comparacion_error": comparacion_error,
             "comparacion_nc_error": comparacion_nc_error,
+            "comparacion": comparacion_data,
+            "comparacion_nc": comparacion_nc_data,
         }
 
     def probar_conexiones(self) -> dict[str, str]:
@@ -714,6 +718,86 @@ class ReportService:
             result.append(fila)
         return result, cols
 
+    def consultar_resolucion_rmas(self) -> tuple[list[dict[str, Any]], list[str]]:
+        """Tickets de devolucion cruzados con la resolucion de su RMA.
+        Si el RMA nunca paso a estado 5, la fila queda sin resolucion."""
+        rows, cols = self._postgres_repository.consultar_resolucion_tickets()
+        tickets: list[dict[str, Any]] = []
+        for row in rows:
+            fila: dict[str, Any] = {}
+            for i, col in enumerate(cols):
+                val = row[i] if i < len(row) else None
+                fila[col] = "" if val is None else str(val).strip()
+            tickets.append(fila)
+
+        uids = list(dict.fromkeys(t["uid_rmas"] for t in tickets if t.get("uid_rmas")))
+        chg_rows, chg_cols = self._postgres_repository.consultar_resolucion_changelogs(uids)
+
+        # Un RMA puede tener varios pasos a estado 5; se toma el mas reciente.
+        resoluciones: dict[str, dict[str, str]] = {}
+        idx_uid = _find_col_index_optional(chg_cols, ["uid_rmas"])
+        idx_fecha = _find_col_index_optional(chg_cols, ["fecha"])
+        idx_comment = _find_col_index_optional(chg_cols, ["comment"])
+        for row in chg_rows:
+            uid = str(row[idx_uid]).strip() if idx_uid is not None and row[idx_uid] else ""
+            if not uid:
+                continue
+            fecha = str(row[idx_fecha]).strip() if idx_fecha is not None and row[idx_fecha] else ""
+            comentario = str(row[idx_comment]).strip() if idx_comment is not None and row[idx_comment] else ""
+            actual = resoluciones.get(uid)
+            if actual is None or _orden_fecha_resolucion(fecha) > _orden_fecha_resolucion(actual["fecha"]):
+                resoluciones[uid] = {"fecha": fecha, "comentario": comentario}
+
+        SIN_RESOLUCION = "No tiene resolución"
+        salida: list[dict[str, Any]] = []
+        for t in tickets:
+            resolucion = resoluciones.get(t.get("uid_rmas", ""))
+            cliente = _primer_nombre_apellido(
+                t.get("first_name", ""),
+                t.get("last_name", ""),
+            )
+            # Con banco la devolucion va a cuenta; sin banco, a la tarjeta.
+            a_cuenta = bool(str(t.get("banco", "") or "").strip())
+            # Sin fecha de resolucion no hay nada que comunicarle al cliente.
+            if resolucion:
+                # Cada destino tiene su propio texto. A cuenta la fecha del RMA
+                # no sirve: queda FECHA para completarla a mano.
+                plantilla = _MENSAJE_CUENTA if a_cuenta else _MENSAJE_TARJETA
+                mensaje = plantilla.format(
+                    cliente=cliente,
+                    orden=t.get("uid_orders", "") or "(sin orden)",
+                    fecha="FECHA" if a_cuenta else _fecha_dd_mm_yyyy(resolucion["fecha"]),
+                )
+            else:
+                mensaje = SIN_RESOLUCION
+            salida.append(
+                {
+                    "fecha": t.get("fecha", "") or SIN_RESOLUCION,
+                    "uid_tickets": t.get("uid_tickets", "") or SIN_RESOLUCION,
+                    "uid_orders": t.get("uid_orders", "") or SIN_RESOLUCION,
+                    "uid_rmas": t.get("uid_rmas", "") or SIN_RESOLUCION,
+                    "cliente": cliente,
+                    "banco": str(t.get("banco", "") or "").strip(),
+                    "fecha_resolucion": resolucion["fecha"] if resolucion else SIN_RESOLUCION,
+                    "comentario": resolucion["comentario"] if resolucion else SIN_RESOLUCION,
+                    "mensaje": mensaje,
+                    "_resuelto": resolucion is not None,
+                    "_a_cuenta": a_cuenta,
+                }
+            )
+        cols_salida = [
+            "fecha",
+            "uid_tickets",
+            "uid_orders",
+            "uid_rmas",
+            "cliente",
+            "banco",
+            "fecha_resolucion",
+            "comentario",
+            "mensaje",
+        ]
+        return salida, cols_salida
+
     @staticmethod
     def _construir_filas_tickets(
         rows: list[tuple[Any, ...]],
@@ -862,7 +946,7 @@ class ReportService:
         pg_rows: list[tuple[Any, ...]],
         pg_cols: list[str],
         sheet_name: str,
-    ) -> None:
+    ) -> dict[str, Any]:
         # Busca columnas necesarias por nombre (sin sensibilidad a mayusculas).
         idx_sap_ref = _find_col_index(sap_cols, ["referencia"])
         idx_sap_doc = _find_col_index(sap_cols, ["u_bot_docentry"])
@@ -971,6 +1055,13 @@ class ReportService:
             extra_title=extra_title,
             extra_rows=extra_rows,
         )
+        # Mismos datos que van al Excel, para pintarlos en pantalla.
+        return {
+            "resumen": resumen,
+            "faltantes": faltantes,
+            "diferencias": diferencias,
+            "validacion_nc": extra_rows or [],
+        }
 
 
 def _find_col_index(cols: list[str], candidates: list[str]) -> int:
@@ -980,6 +1071,66 @@ def _find_col_index(cols: list[str], candidates: list[str]) -> int:
         if candidate in normalized:
             return normalized[candidate]
     raise RuntimeError(f"No se encontro columna requerida. Esperadas: {', '.join(candidates)}")
+
+
+# Devolucion a la tarjeta: lleva la fecha real de resolucion del RMA.
+_MENSAJE_TARJETA = (
+    "Buenas tardes, {cliente}:\n"
+    "Por medio del presente, le informamos que la devolución de dinero correspondiente "
+    "a la orden de compra {orden} fue realizada el día {fecha}, mediante el mismo medio "
+    "de pago utilizado al momento de efectuar la compra.\n"
+    "Es importante mencionar que el tiempo para que el monto se vea reflejado en su "
+    "cuenta dependerá de los plazos de procesamiento y liberación establecidos por el "
+    "banco emisor de la tarjeta.\n"
+    "Saludos cordiales,\n"
+    "Equipo Postventa."
+)
+
+# Devolucion a cuenta bancaria: la fecha queda como FECHA para completarla.
+_MENSAJE_CUENTA = (
+    "Buenas tardes, {cliente}:\n"
+    "Por medio del presente, le informamos que la devolución de dinero correspondiente "
+    "a la orden de compra {orden} fue gestionada a su cuenta bancaria el día {fecha}.\n"
+    "Le recomendamos revisar los movimientos de su cuenta bancaria para verificar el "
+    "abono correspondiente a la devolución.\n"
+    "Saludos cordiales,\n"
+    "Equipo Postventa"
+)
+
+
+def _fecha_dd_mm_yyyy(fecha: str) -> str:
+    # El changelog trae 'YYYY-MM-DD HH:MI:SS AM'; el mensaje al cliente lleva
+    # solo 31/07/2026.
+    texto = str(fecha or "").strip()
+    try:
+        return datetime.strptime(texto, "%Y-%m-%d %I:%M:%S %p").strftime("%d/%m/%Y")
+    except ValueError:
+        pass
+    try:
+        return datetime.strptime(texto[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+    except ValueError:
+        return texto
+
+
+def _primer_nombre_apellido(first_name: str, last_name: str) -> str:
+    # Solo el primer nombre y el primer apellido: los clientes suelen tener
+    # nombres compuestos y la columna se vuelve ilegible.
+    partes = [
+        valor.split()[0]
+        for valor in (str(first_name or ""), str(last_name or ""))
+        if valor.split()
+    ]
+    return " ".join(partes) or "—"
+
+
+def _orden_fecha_resolucion(fecha: str) -> tuple[int, str]:
+    # El changelog trae 'YYYY-MM-DD HH:MI:SS AM'. Se parsea para comparar bien
+    # (el orden alfabetico se equivoca con AM/PM); si no se puede, se cae al
+    # texto tal cual.
+    try:
+        return (1, datetime.strptime(fecha, "%Y-%m-%d %I:%M:%S %p").isoformat())
+    except (ValueError, TypeError):
+        return (0, fecha or "")
 
 
 def _norm_id(value: Any) -> str:

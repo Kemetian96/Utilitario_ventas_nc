@@ -23,6 +23,21 @@ DATOS_RMA_PATH = _QUERIES_DIR / "datos_rma.sql"
 ORDEN_PAGO_PATH = _QUERIES_DIR / "orden_pago.sql"
 TICKETS_PATH = _QUERIES_DIR / "tickets.sql"
 DEVOLUCIONES_PATH = _QUERIES_DIR / "devoluciones.sql"
+RESOLUCION_TICKETS_PATH = _QUERIES_DIR / "resolucion_tickets.sql"
+RESOLUCION_CHANGELOGS_PATH = _QUERIES_DIR / "resolucion_changelogs.sql"
+
+# Separador de bloques dentro de resolucion_changelogs.sql.
+_SQL_SPLIT = "-- @@"
+
+
+def _tiene_sql(bloque: str) -> bool:
+    """True si el bloque tiene algo ejecutable. Un tramo que solo trae
+    comentarios o espacios se descarta: Postgres lo rechaza como consulta
+    vacia."""
+    return any(
+        linea.strip() and not linea.strip().startswith("--")
+        for linea in bloque.splitlines()
+    )
 
 
 class PostgresRepository:
@@ -36,6 +51,8 @@ class PostgresRepository:
         self._query_orden_pago = ORDEN_PAGO_PATH.read_text(encoding="utf-8")
         self._query_tickets = TICKETS_PATH.read_text(encoding="utf-8")
         self._query_devoluciones = DEVOLUCIONES_PATH.read_text(encoding="utf-8")
+        self._query_resolucion_tickets = RESOLUCION_TICKETS_PATH.read_text(encoding="utf-8")
+        self._query_resolucion_changelogs = RESOLUCION_CHANGELOGS_PATH.read_text(encoding="utf-8")
         # Conexion persistente opcional. Cuando _sesion_activa es True, las
         # queries reusan self._conn en lugar de abrir/cerrar una nueva cada vez.
         # Si la conexion muere, se reabre automaticamente dentro de la sesion.
@@ -155,31 +172,118 @@ class PostgresRepository:
         return self._ejecutar_sin_params(self._query_tickets)
 
     def consultar_devoluciones(self) -> tuple[list[tuple[Any, ...]], list[str]]:
-        return self._ejecutar_sin_params(self._query_devoluciones)
+        # Query pesada que suele caerse por timeout: hasta 3 intentos.
+        return self._ejecutar_sin_params(self._query_devoluciones, reintentos=3)
 
-    def _ejecutar_sin_params(self, query: str) -> tuple[list[tuple[Any, ...]], list[str]]:
-        conn = None
-        cur = None
-        try:
-            conn = self._connect(keepalives=True)
-            conn.autocommit = True
-            cur = conn.cursor()
-            cur.execute("SET statement_timeout = 0")
-            cur.execute(query)
-            rows = cur.fetchall()
-            cols = [c[0] for c in cur.description] if cur.description else []
-            return rows, cols
-        finally:
-            if cur:
-                try:
-                    cur.close()
-                except Exception:
-                    pass
-            if conn:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
+    def consultar_resolucion_tickets(self) -> tuple[list[tuple[Any, ...]], list[str]]:
+        return self._ejecutar_sin_params(self._query_resolucion_tickets, reintentos=3)
+
+    def consultar_resolucion_changelogs(
+        self,
+        uids: list[str],
+        reintentos: int = 3,
+        espera_segundos: int = 2,
+    ) -> tuple[list[tuple[Any, ...]], list[str]]:
+        """Resolucion (paso a estado 5) de los RMA indicados. Las TEMP TABLE
+        necesitan una sola conexion viva, por eso todos los bloques se
+        ejecutan sobre el mismo cursor."""
+        if not uids:
+            return [], ["comment", "id_rmas_statuses", "fecha", "uid_rmas"]
+
+        placeholders = ", ".join(["%s"] * len(uids))
+        bloques = [
+            b.strip()
+            for b in self._query_resolucion_changelogs.split(_SQL_SPLIT)
+            if _tiene_sql(b)
+        ]
+
+        for intento in range(1, reintentos + 1):
+            conn = None
+            cur = None
+            try:
+                conn = self._connect(keepalives=True)
+                conn.autocommit = True
+                cur = conn.cursor()
+                cur.execute("SET statement_timeout = 0")
+                rows: list[tuple[Any, ...]] = []
+                cols: list[str] = []
+                for bloque in bloques:
+                    if "{{uids}}" in bloque:
+                        cur.execute(bloque.replace("{{uids}}", placeholders), tuple(uids))
+                    else:
+                        cur.execute(bloque)
+                    # Se queda con la salida del ultimo bloque que devuelve filas.
+                    if cur.description:
+                        rows = cur.fetchall()
+                        cols = [c[0] for c in cur.description]
+                return rows, cols
+            except psycopg2.OperationalError as exc:
+                LOGGER.warning(
+                    "Changelogs de RMA fallo (intento %s/%s): %s",
+                    intento,
+                    reintentos,
+                    exc,
+                )
+                if intento == reintentos:
+                    raise
+                time.sleep(espera_segundos)
+            finally:
+                if cur:
+                    try:
+                        cur.close()
+                    except Exception:
+                        pass
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+
+        raise RuntimeError("No se pudo leer los changelogs de RMA tras todos los reintentos.")
+
+    def _ejecutar_sin_params(
+        self,
+        query: str,
+        reintentos: int = 1,
+        espera_segundos: int = 2,
+    ) -> tuple[list[tuple[Any, ...]], list[str]]:
+        # Solo se reintentan fallos operativos (timeout, conexion caida,
+        # query cancelada). Un error de SQL falla de una vez.
+        for intento in range(1, reintentos + 1):
+            conn = None
+            cur = None
+            try:
+                conn = self._connect(keepalives=True)
+                conn.autocommit = True
+                cur = conn.cursor()
+                cur.execute("SET statement_timeout = 0")
+                cur.execute(query)
+                rows = cur.fetchall()
+                cols = [c[0] for c in cur.description] if cur.description else []
+                return rows, cols
+            except psycopg2.OperationalError as exc:
+                LOGGER.warning(
+                    "Consulta Postgres fallo (intento %s/%s): %s",
+                    intento,
+                    reintentos,
+                    exc,
+                )
+                if intento == reintentos:
+                    raise
+                time.sleep(espera_segundos)
+            finally:
+                if cur:
+                    try:
+                        cur.close()
+                    except Exception:
+                        pass
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+
+        raise RuntimeError("No se pudo ejecutar la consulta Postgres tras todos los reintentos.")
 
     def ejecutar_migrar_oc(self, fecha: date) -> None:
         sql = self._query_migrar_oc.replace("{{fecha}}", fecha.strftime("%Y-%m-%d"))
