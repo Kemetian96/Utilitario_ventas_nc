@@ -97,6 +97,8 @@ class Settings:
     sap_output_path: Path
     pg_output_path: Path
     comparacion_output_path: Path
+    # Base local (SQLite) con datos propios de la app
+    local_db_path: Path
     # SAP Service Layer
     sl_url: str
     sl_company_db: str
@@ -159,6 +161,9 @@ def load_settings() -> Settings:
         sap_output_path=Path(_get_env("SAP_OUTPUT_PATH", str(Path("OUTPUT") / "SAP.xlsx"))),
         pg_output_path=Path(_get_env("PG_OUTPUT_PATH", str(Path("OUTPUT") / "TUTATI.xlsx"))),
         comparacion_output_path=Path(_get_env("COMPARACION_OUTPUT_PATH", str(Path("OUTPUT") / "COMPARACION.xlsx"))),
+        # Absoluta por defecto: la base local no debe depender del directorio
+        # desde el que se lanza la app. Vacia en el .env = usa el default.
+        local_db_path=Path(_get_optional_env("LOCAL_DB_PATH") or (ROOT_DIR / "data" / "local.db")),
         sl_url=_get_env("SL_URL", "https://54.210.79.151:50000/b1s/v1"),
         sl_company_db=_get_env("SL_COMPANY_DB", "B1H_COMERCIALMONT_PROD"),
         sl_user=_get_env("SL_USER", ""),

@@ -114,6 +114,90 @@
     }
     .group-count.pend { background: rgba(251,191,36,0.16); color: var(--warn); }
     .group-count.done { background: rgba(74,222,128,0.14); color: var(--ok); }
+
+    /* Semaforo (solo tickets asignados): una sola bolita con el estado actual.
+       Al hacer clic se elige otro. La marca vive en la base local, indexada por
+       uid_tickets: no se pierde aunque el ticket siga abierto semanas. */
+    .sem-color-no_enviado { background: var(--err,  #f87171); }
+    .sem-color-enviado    { background: var(--warn, #fbbf24); }
+    .sem-color-devuelto   { background: var(--ok,   #4ade80); }
+    .sem-color-validar    { background: #f4f6fb; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.35); }
+    .sem-color-no_aplica  { background: #23262d; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.28); }
+
+    .semaforo {
+      position: relative;
+      display: flex;
+      justify-content: center;
+    }
+    .sem-actual {
+      width: 16px; height: 16px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      display: block;
+      transition: transform .12s ease;
+    }
+    .sem-actual:hover { transform: scale(1.18); }
+    .semaforo.guardando { opacity: 0.45; pointer-events: none; }
+    .col-estado { width: 1%; text-align: center; }
+    .tickets-table th.col-estado { text-align: center; }
+
+    .sem-menu {
+      position: absolute;
+      z-index: 40;
+      top: calc(100% + 6px);
+      /* Se abre hacia la derecha desde la bolita: es la primera columna y
+         centrarlo lo sacaria fuera de la tabla. */
+      left: 50%;
+      transform: translateX(-14px);
+      min-width: 172px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel, #14161a);
+      box-shadow: 0 10px 26px rgba(0,0,0,0.45);
+    }
+    .sem-menu[hidden] { display: none; }
+    .sem-opcion {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      width: 100%;
+      padding: 7px 9px;
+      border: none;
+      border-radius: 6px;
+      background: none;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.78rem;
+      text-align: left;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .sem-opcion:hover { background: rgba(255,255,255,0.07); }
+    .sem-opcion i {
+      width: 11px; height: 11px;
+      border-radius: 50%;
+      flex: none;
+    }
+    .sem-opcion.activa { font-weight: 700; }
+    .sem-opcion.activa::after { content: "✓"; margin-left: auto; color: var(--muted); }
+
+    .semaforo-leyenda {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      font-size: 0.74rem;
+      color: var(--muted);
+    }
+    .semaforo-leyenda span { display: flex; align-items: center; gap: 6px; }
+    .semaforo-leyenda i {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      display: inline-block;
+    }
   </style>
 
   <section class="panel">
@@ -128,8 +212,34 @@
 
     <div class="alert error" id="tickets-error" {% if not error %}hidden{% endif %}>{{ error or "" }}</div>
 
+    {% set ESTADOS = [
+      ('no_enviado', 'No enviado'),
+      ('enviado',    'Enviado'),
+      ('devuelto',   'Devuelto'),
+      ('validar',    'Validar'),
+      ('no_aplica',  'No aplica')
+    ] %}
+    {% set ETIQUETAS = dict(ESTADOS) %}
+
+    <div class="semaforo-leyenda">
+      {% for valor, etiqueta in ESTADOS %}
+        <span><i class="sem-color-{{ valor }}"></i> {{ etiqueta }}</span>
+      {% endfor %}
+      <span>Clic en la bolita para cambiar. La marca queda guardada aunque pasen semanas.</span>
+    </div>
+
     {% macro fila_ticket(row, con_asignado) %}
+      {% set marca = row.get('_marca', 'no_aplica') %}
       <tr>
+        {% if con_asignado %}
+          <td class="col-estado">
+            <div class="semaforo" data-uid="{{ row.get('uid_tickets', '') }}" data-marca="{{ marca }}">
+              <button type="button" class="sem-actual sem-color-{{ marca }}"
+                      title="{{ ETIQUETAS.get(marca, marca) }}{% if row.get('_marca_fecha') %} · {{ row.get('_marca_usuario', '') }} {{ row.get('_marca_fecha', '') }}{% endif %}"
+                      aria-label="Estado: {{ ETIQUETAS.get(marca, marca) }}"></button>
+            </div>
+          </td>
+        {% endif %}
         <td>
           <span class="pais-badge {{ row.get('_pais', 'pe') }}">{{ row.get('_pais', 'pe') | upper }}</span>
           <a class="ticket-link" target="_blank" rel="noopener"
@@ -182,6 +292,7 @@
         <table class="tickets-table">
           <thead>
             <tr>
+              <th class="col-estado">Estado</th>
               <th>UID Ticket</th>
               <th>Asunto</th>
               <th>Usuario</th>
@@ -193,12 +304,13 @@
             {% if asignados %}
               {% for row in asignados %}{{ fila_ticket(row, true) }}{% endfor %}
             {% else %}
-              <tr><td colspan="5" class="tickets-empty">Ninguno asignado.</td></tr>
+              <tr><td colspan="6" class="tickets-empty">Ninguno asignado.</td></tr>
             {% endif %}
           </tbody>
         </table>
       </div>
     </div>
+
   </section>
 
   <script>
@@ -210,8 +322,17 @@
                 cols: 4, vacio: "Ninguno sin asignar." },
         asig: { body: document.getElementById("body-asignados"),
                 count: document.getElementById("count-asignados"),
-                cols: 5, vacio: "Ninguno asignado." }
+                cols: 6, vacio: "Ninguno asignado." }
       };
+      var ESTADOS = [
+        ["no_enviado", "No enviado"],
+        ["enviado",    "Enviado"],
+        ["devuelto",   "Devuelto"],
+        ["validar",    "Validar"],
+        ["no_aplica",  "No aplica"]
+      ];
+      var ETIQUETAS = {};
+      ESTADOS.forEach(function (e) { ETIQUETAS[e[0]] = e[1]; });
       var countEl   = document.getElementById("tickets-count");
       var updatedEl = document.getElementById("tickets-updated");
       var errorEl   = document.getElementById("tickets-error");
@@ -223,12 +344,25 @@
           .replace(/"/g, "&quot;");
       }
 
+      function semaforoHtml(uid, marca, usuario, fecha) {
+        var titulo = (ETIQUETAS[marca] || marca)
+                   + (fecha ? " · " + (usuario || "") + " " + fecha : "");
+        return '<td class="col-estado"><div class="semaforo" data-uid="' + esc(uid)
+             + '" data-marca="' + esc(marca) + '">'
+             + '<button type="button" class="sem-actual sem-color-' + esc(marca)
+             + '" title="' + esc(titulo) + '" aria-label="Estado: '
+             + esc(ETIQUETAS[marca] || marca) + '"></button></div></td>';
+      }
+
       function filaHtml(r, conAsignado) {
         var uid  = r.uid_tickets || "";
         var pais = r._pais || "pe";
         var url  = "https://tutati.com/" + pais + "/tickets/detail?uid_tickets="
                  + encodeURIComponent(uid) + "&tab=detail";
         return "<tr>"
+          + (conAsignado
+              ? semaforoHtml(uid, r._marca || "no_aplica", r._marca_usuario, r._marca_fecha)
+              : "")
           + '<td><span class="pais-badge ' + pais + '">' + esc(pais.toUpperCase()) + "</span>"
           + '<a class="ticket-link" target="_blank" rel="noopener" href="' + url + '">'
           + esc(uid) + "</a></td>"
@@ -269,6 +403,8 @@
       }
 
       function refresh() {
+        // Con el menu abierto el repintado lo cerraria a media eleccion.
+        if (document.querySelector(".sem-menu")) return;
         liveDot.classList.add("updating");
         fetch("/api/tickets", { headers: { "Accept": "application/json" } })
           .then(function (res) { return res.json(); })
@@ -285,6 +421,85 @@
           .catch(function () { /* mantiene la última tabla visible */ })
           .finally(function () { liveDot.classList.remove("updating"); });
       }
+
+      // Semaforo (solo en asignados): la bolita muestra el estado actual y al
+      // hacer clic despliega las opciones. Delegacion, porque el cuerpo de la
+      // tabla se vuelve a pintar en cada refresco.
+      function cerrarMenu() {
+        var abierto = document.querySelector(".sem-menu");
+        if (abierto) abierto.remove();
+      }
+
+      function pintarBolita(caja, estado) {
+        var boton = caja.querySelector(".sem-actual");
+        ESTADOS.forEach(function (e) { boton.classList.remove("sem-color-" + e[0]); });
+        boton.classList.add("sem-color-" + estado);
+        boton.title = ETIQUETAS[estado] || estado;
+        boton.setAttribute("aria-label", "Estado: " + (ETIQUETAS[estado] || estado));
+        caja.dataset.marca = estado;
+      }
+
+      function abrirMenu(caja) {
+        cerrarMenu();
+        var actual = caja.dataset.marca || "no_aplica";
+        var menu = document.createElement("div");
+        menu.className = "sem-menu";
+        menu.innerHTML = ESTADOS.map(function (e) {
+          return '<button type="button" class="sem-opcion' + (e[0] === actual ? " activa" : "")
+               + '" data-estado="' + e[0] + '"><i class="sem-color-' + e[0] + '"></i>'
+               + esc(e[1]) + "</button>";
+        }).join("");
+        caja.appendChild(menu);
+      }
+
+      function guardarMarca(caja, estado) {
+        var uid = caja.dataset.uid;
+        var anterior = caja.dataset.marca || "no_aplica";
+        cerrarMenu();
+        if (!uid || estado === anterior) return;
+
+        pintarBolita(caja, estado);
+        caja.classList.add("guardando");
+
+        fetch("/api/tickets/marca", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uid_tickets: uid, estado: estado })
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (!data.ok) throw new Error(data.error || "Error al guardar");
+            errorEl.hidden = true;
+          })
+          .catch(function (err) {
+            // Revierte: la marca no quedo guardada.
+            pintarBolita(caja, anterior);
+            errorEl.textContent = "No se pudo guardar la marca: " + err.message;
+            errorEl.hidden = false;
+          })
+          .finally(function () { caja.classList.remove("guardando"); });
+      }
+
+      GRUPOS.asig.body.addEventListener("click", function (ev) {
+        var opcion = ev.target.closest(".sem-opcion");
+        if (opcion) {
+          guardarMarca(opcion.closest(".semaforo"), opcion.dataset.estado);
+          return;
+        }
+        var bolita = ev.target.closest(".sem-actual");
+        if (!bolita) return;
+        var caja = bolita.closest(".semaforo");
+        if (caja.querySelector(".sem-menu")) cerrarMenu();
+        else abrirMenu(caja);
+      });
+
+      // Un clic fuera o Escape cierran el menu.
+      document.addEventListener("click", function (ev) {
+        if (!ev.target.closest(".semaforo")) cerrarMenu();
+      });
+      document.addEventListener("keydown", function (ev) {
+        if (ev.key === "Escape") cerrarMenu();
+      });
 
       // Pestañas: recuerda la última elegida en este navegador.
       var tabs   = [].slice.call(document.querySelectorAll(".tab-btn"));

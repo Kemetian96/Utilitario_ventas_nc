@@ -7,9 +7,18 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+import requests
+
 from sap_report.application.email_templates import construir_correo
 from sap_report.domain import cuid_a_fecha, fecha_a_cuid
-from sap_report.infrastructure.db import MySQLRepository, PostgresRepository, SapHanaRepository, SapServiceLayerRepository
+from sap_report.infrastructure.db import (
+    TICKET_NO_APLICA,
+    LocalStore,
+    MySQLRepository,
+    PostgresRepository,
+    SapHanaRepository,
+    SapServiceLayerRepository,
+)
 from sap_report.infrastructure.email import SmtpMailer
 from sap_report.infrastructure.export import (
     exportar_comparacion,
@@ -19,6 +28,55 @@ from sap_report.infrastructure.export import (
 
 
 LOGGER = logging.getLogger(__name__)
+
+# Crear LPN: la funcion admite hasta 200000, pero por encima de ~2000 el
+# servidor corta la sesion. 2000 es el tamano que pasa de forma estable.
+LPN_LOTE_MAX = 2000
+LPN_TIPO = 3
+# El servidor corta la sesion seguido; la misma llamada suele pasar al segundo
+# o tercer intento.
+LPN_INTENTOS = 10
+LPN_ESPERA_REINTENTO = 6
+
+
+def _es_url_de_numeraciones(url: str) -> bool:
+    """Los CSV viven en el bucket de la cuenta, bajo numerations-suppliers/.
+    Cualquier otra direccion se rechaza."""
+    return bool(
+        re.match(
+            r"^https://[\w.-]+\.s3\.[\w-]+\.amazonaws\.com/numerations-suppliers/",
+            (url or "").strip(),
+        )
+    )
+
+
+def _resumir_lpn(respuesta: Any) -> dict[str, Any]:
+    """La funcion devuelve [[{file_href}], [{LPN_QR, LPN_RFID}, ...]] con un
+    objeto por LPN: miles de entradas. Para el log y la pantalla basta el
+    enlace del CSV y el rango."""
+    resumen: dict[str, Any] = {}
+    try:
+        resumen["file_href"] = respuesta[0][0]["file_href"]
+        lpns = respuesta[1] or []
+        resumen["lpns"] = len(lpns)
+        if lpns:
+            resumen["desde"] = lpns[0].get("LPN_QR")
+            resumen["hasta"] = lpns[-1].get("LPN_QR")
+            resumen["rfid_desde"] = lpns[0].get("LPN_RFID")
+            resumen["rfid_hasta"] = lpns[-1].get("LPN_RFID")
+    except Exception:
+        # Respuesta con otra forma (por ejemplo el success:false de la funcion).
+        resumen["respuesta"] = respuesta
+    return resumen
+
+
+def _particionar(total: int, maximo: int) -> list[int]:
+    """14000 con maximo 10000 -> [10000, 4000]."""
+    lotes = [maximo] * (total // maximo)
+    resto = total % maximo
+    if resto:
+        lotes.append(resto)
+    return lotes
 
 
 class ReportService:
@@ -33,6 +91,7 @@ class ReportService:
         postgres_output_path: Path,
         comparacion_output_path: Path,
         postgres_chile_repository: PostgresRepository | None = None,
+        local_store: LocalStore | None = None,
     ) -> None:
         # Dependencias de acceso a datos y rutas de salida.
         self._sap_repository = sap_repository
@@ -41,6 +100,7 @@ class ReportService:
         self._mysql_repository = mysql_repository
         self._sl_repository = sl_repository
         self._mailer = mailer
+        self._local_store = local_store
         self._sap_output_path = sap_output_path
         self._postgres_output_path = postgres_output_path
         self._comparacion_output_path = comparacion_output_path
@@ -705,7 +765,243 @@ class ReportService:
 
         # Orden global por fecha descendente (el string YYYY-MM-DD... ordena bien).
         result.sort(key=lambda f: f.get("fecha", ""), reverse=True)
+        self._aplicar_marcas_tickets(result)
         return result, cols
+
+    def _aplicar_marcas_tickets(self, filas: list[dict[str, Any]]) -> None:
+        """Agrega a cada fila la marca guardada en la base local. Sin marca
+        previa el ticket arranca en negro (no aplica): entra al seguimiento
+        solo cuando alguien lo marca a mano."""
+        marcas: dict[str, dict[str, Any]] = {}
+        if self._local_store is not None:
+            uids = [str(f.get("uid_tickets", "")).strip() for f in filas]
+            try:
+                marcas = self._local_store.marcas_tickets([u for u in uids if u])
+            except Exception as exc:
+                # La marca es un extra: si la base local falla, la tabla igual
+                # se muestra.
+                LOGGER.warning("No se pudieron leer las marcas de tickets: %s", exc)
+        for fila in filas:
+            marca = marcas.get(str(fila.get("uid_tickets", "")).strip())
+            fila["_marca"] = marca["estado"] if marca else TICKET_NO_APLICA
+            fila["_marca_usuario"] = marca["usuario"] if marca else ""
+            fila["_marca_fecha"] = marca["actualizado"] if marca else ""
+
+    def marcar_ticket(
+        self,
+        uid_tickets: str,
+        estado: str,
+        usuario: str | None = None,
+    ) -> dict[str, Any]:
+        """Guarda el semaforo del ticket en la base local. Persiste indefinidamente:
+        la clave es el uid_tickets, no la consulta que lo trajo."""
+        if self._local_store is None:
+            raise RuntimeError("No hay base local configurada.")
+        return self._local_store.guardar_marca_ticket(uid_tickets, estado, usuario)
+
+    def crear_lpn(
+        self,
+        pais: str,
+        cantidad: int,
+        numeracion: str,
+        proveedor: str,
+        tipo: int = LPN_TIPO,
+        intentos: int = LPN_INTENTOS,
+    ) -> list[dict[str, Any]]:
+        """Crea numeraciones de proveedor en el Postgres del pais indicado.
+
+        La funcion no admite mas de LPN_LOTE_MAX por llamada, asi que la
+        cantidad se parte en lotes y se ejecuta uno por uno; se devuelve la
+        respuesta de cada lote. Si un lote falla, los anteriores ya quedaron
+        creados: por eso el resultado lleva el detalle lote por lote.
+        """
+        if cantidad <= 0:
+            raise ValueError("La cantidad debe ser mayor a cero.")
+        if not numeracion.strip():
+            raise ValueError("Falta la numeracion.")
+        if not proveedor.strip():
+            raise ValueError("Falta el proveedor.")
+
+        repositorio = self._repositorio_por_pais(pais)
+        lotes = _particionar(cantidad, LPN_LOTE_MAX)
+        etiqueta = pais.strip().upper()
+        LOGGER.info(
+            "Crear LPN %s: %s en %s lote(s) %s | numeracion=%s proveedor=%s tipo=%s",
+            etiqueta, cantidad, len(lotes), lotes, numeracion.strip(), proveedor.strip(), tipo,
+        )
+
+        resultados: list[dict[str, Any]] = []
+        creados = 0
+        inicio_total = time.perf_counter()
+        for indice, lote in enumerate(lotes, start=1):
+            item = self._crear_lpn_lote(
+                repositorio, etiqueta, indice, len(lotes), lote,
+                numeracion.strip(), proveedor.strip(), tipo, intentos,
+            )
+            resultados.append(item)
+            if not item.get("ok"):
+                LOGGER.error(
+                    "Crear LPN %s: detenido. Creados %s de %s; quedaron %s lote(s) sin ejecutar.",
+                    etiqueta, creados, cantidad, len(lotes) - indice,
+                )
+                # Sin corte seguiriamos creando numeraciones sobre un fallo que
+                # no entendemos todavia.
+                break
+            creados += lote
+        else:
+            LOGGER.info(
+                "Crear LPN %s: terminado. %s de %s en %s lote(s), %.1fs.",
+                etiqueta, creados, cantidad, len(lotes), time.perf_counter() - inicio_total,
+            )
+        return resultados
+
+    def _crear_lpn_lote(
+        self,
+        repositorio: PostgresRepository,
+        etiqueta: str,
+        indice: int,
+        total_lotes: int,
+        lote: int,
+        numeracion: str,
+        proveedor: str,
+        tipo: int,
+        intentos: int,
+    ) -> dict[str, Any]:
+        """Un lote, con reintentos. El servidor corta la sesion a menudo y la
+        misma llamada suele pasar al segundo o tercer intento.
+
+        Antes de reintentar se cuenta cuantas reservas hay: si una llamada que
+        parecio fallar alcanzo a confirmar, el conteo sube y se para ahi. Sin
+        esa comprobacion un reintento reservaria el rango dos veces.
+        """
+        item: dict[str, Any] = {"lote": indice, "cantidad": lote}
+        try:
+            reservas_previas = repositorio.contar_reservas_lpn(numeracion, proveedor)
+        except Exception as exc:
+            # Sin linea base no se puede distinguir "fallo" de "fallo pero creo":
+            # se ejecuta una sola vez, sin reintentos.
+            LOGGER.warning(
+                "Crear LPN %s: no se pudo contar reservas previas (%s). Sin reintentos.",
+                etiqueta, exc,
+            )
+            reservas_previas = None
+            intentos = 1
+
+        ultimo_error = ""
+        for intento in range(1, intentos + 1):
+            LOGGER.info(
+                "Crear LPN %s: lote %s/%s (%s) intento %s/%s enviando...",
+                etiqueta, indice, total_lotes, lote, intento, intentos,
+            )
+            inicio = time.perf_counter()
+            try:
+                respuesta = repositorio.crear_lpn(lote, numeracion, proveedor, tipo)
+                item.update(
+                    ok=True,
+                    respuesta=respuesta,
+                    resumen=_resumir_lpn(respuesta),
+                    intentos=intento,
+                )
+                LOGGER.info(
+                    "Crear LPN %s: lote %s/%s (%s) OK en el intento %s (%.1fs) -> %s",
+                    etiqueta, indice, total_lotes, lote, intento,
+                    time.perf_counter() - inicio, item["resumen"],
+                )
+                return item
+            except Exception as exc:
+                ultimo_error = str(exc)
+                LOGGER.error(
+                    "Crear LPN %s: lote %s/%s (%s) intento %s/%s fallo tras %.1fs: %s",
+                    etiqueta, indice, total_lotes, lote, intento, intentos,
+                    time.perf_counter() - inicio, exc,
+                )
+
+            if reservas_previas is not None:
+                try:
+                    ahora = repositorio.contar_reservas_lpn(numeracion, proveedor)
+                except Exception:
+                    ahora = reservas_previas
+                if ahora > reservas_previas:
+                    LOGGER.warning(
+                        "Crear LPN %s: la llamada fallo pero la reserva quedo creada. "
+                        "No se reintenta.",
+                        etiqueta,
+                    )
+                    item.update(
+                        ok=True,
+                        confirmado_en_base=True,
+                        intentos=intento,
+                        resumen={"nota": "creada pese al error de conexion"},
+                    )
+                    return item
+
+            if intento < intentos:
+                time.sleep(LPN_ESPERA_REINTENTO)
+
+        item.update(ok=False, error=ultimo_error, intentos=intentos)
+        return item
+
+    def combinar_csv_lpn(self, urls: list[str]) -> tuple[str, dict[str, Any]]:
+        """Descarga los CSV que genero cada lote y los junta en uno solo:
+        una cabecera arriba y las filas de todos en orden.
+
+        Devuelve (contenido, resumen). Solo acepta URLs del bucket de
+        numeraciones: el servidor no descarga cualquier direccion que le
+        manden.
+        """
+        if not urls:
+            raise ValueError("No hay archivos que combinar.")
+
+        cabecera: str | None = None
+        filas: list[str] = []
+        por_archivo: list[int] = []
+
+        for indice, url in enumerate(urls, start=1):
+            if not _es_url_de_numeraciones(url):
+                raise ValueError(f"URL no permitida: {url}")
+            # El nombre del archivo lleva espacios (la descripcion).
+            respuesta = requests.get(url.replace(" ", "%20"), timeout=60)
+            respuesta.raise_for_status()
+
+            lineas = [l for l in respuesta.text.splitlines() if l.strip()]
+            if not lineas:
+                continue
+            if cabecera is None:
+                cabecera = lineas[0]
+            datos = lineas[1:]      # se descarta la cabecera de cada archivo
+            filas.extend(datos)
+            por_archivo.append(len(datos))
+            LOGGER.info("Combinar CSV LPN: archivo %s/%s -> %s filas",
+                        indice, len(urls), len(datos))
+
+        if cabecera is None:
+            raise ValueError("Los archivos vinieron vacios.")
+
+        contenido = "\n".join([cabecera] + filas) + "\n"
+        codigos = [f.split(",")[0].strip() for f in filas]
+        numeros = sorted(int(c) for c in codigos if c.isdigit())
+        resumen: dict[str, Any] = {
+            "archivos": len(por_archivo),
+            "filas": len(filas),
+            "filas_por_archivo": por_archivo,
+            "repetidos": len(codigos) - len(set(codigos)),
+        }
+        if numeros:
+            resumen["desde"] = numeros[0]
+            resumen["hasta"] = numeros[-1]
+            resumen["correlativo"] = (numeros[-1] - numeros[0] + 1) == len(numeros)
+        LOGGER.info("Combinar CSV LPN: %s", resumen)
+        return contenido, resumen
+
+    def _repositorio_por_pais(self, pais: str) -> PostgresRepository:
+        clave = (pais or "").strip().lower()
+        if clave in ("pe", "peru", "perú"):
+            return self._postgres_repository
+        if clave in ("cl", "chile"):
+            if self._postgres_chile_repository is None:
+                raise ValueError("Postgres de Chile no esta configurado.")
+            return self._postgres_chile_repository
+        raise ValueError(f"Pais no valido: {pais}")
 
     def consultar_devoluciones(self) -> tuple[list[dict[str, Any]], list[str]]:
         rows, cols = self._postgres_repository.consultar_devoluciones()

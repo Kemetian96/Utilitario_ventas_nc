@@ -475,8 +475,23 @@
           }, 2000);
         }
 
+        /* El overlay se va solo al navegar. Un formulario que responde por
+           fetch nunca navega, asi que hay que poder quitarlo a mano. */
+        function hideLoading() {
+          shown = false;
+          if (overlay) overlay.classList.remove("visible");
+          document.body.style.cursor = "";
+        }
+        window.sapLoading = { mostrar: scheduleLoading, ocultar: hideLoading };
+
         document.querySelectorAll("form").forEach(function (f) {
-          f.addEventListener("submit", function () { scheduleLoading(f.dataset.loadingText || "Procesando…"); });
+          f.addEventListener("submit", function (ev) {
+            /* preventDefault ya ejecutado = el formulario se maneja por fetch
+               y la pagina no va a recargar: mostrar el overlay lo dejaria
+               colgado. */
+            if (ev.defaultPrevented || f.dataset.noLoading !== undefined) return;
+            scheduleLoading(f.dataset.loadingText || "Procesando…");
+          });
         });
 
         document.querySelectorAll("a[href]").forEach(function (a) {

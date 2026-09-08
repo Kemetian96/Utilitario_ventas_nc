@@ -1,0 +1,429 @@
+{% extends "base.html" %}
+
+{% block title %}Tickets Comunes | SAP Web{% endblock %}
+
+{% block content %}
+  <style>
+    .inc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .inc-card {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: none;
+      color: var(--text);
+      font-family: inherit;
+      text-align: left;
+      cursor: pointer;
+      transition: border-color .12s ease, background .12s ease;
+    }
+    .inc-card:hover { border-color: var(--accent); background: rgba(255,255,255,0.03); }
+    .inc-card.activa { border-color: var(--accent); background: rgba(124,156,255,0.08); }
+    .inc-card b { font-size: 0.92rem; }
+    .inc-card span { font-size: 0.76rem; color: var(--muted); }
+    .inc-pais {
+      align-self: flex-start;
+      padding: 1px 7px;
+      border-radius: 6px;
+      font-size: 0.66rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .inc-pais.pe { background: rgba(124,156,255,0.16); color: var(--accent); }
+    .inc-pais.cl { background: rgba(74,222,128,0.16);  color: var(--ok); }
+
+    .inc-form { margin-top: 18px; }
+    .inc-form[hidden] { display: none; }
+    .inc-campos {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin: 10px 0 14px;
+    }
+    .inc-campo label {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 0.74rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .inc-campo input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--bg, #0e1014);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.88rem;
+    }
+    .inc-campo input:focus { outline: none; border-color: var(--accent); }
+
+    .inc-aviso {
+      margin-top: 8px;
+      font-size: 0.76rem;
+      color: var(--muted);
+    }
+    /* Los enlaces al CSV son lo que el usuario se lleva: van arriba, completos
+       y copiables, uno por lote. */
+    .inc-links { margin-top: 14px; }
+    .inc-links[hidden] { display: none; }
+    .inc-link-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 11px;
+      margin-top: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.02);
+    }
+    .inc-link-row .lote-tag {
+      flex: none;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: rgba(124,156,255,0.16);
+      color: var(--accent);
+      font-size: 0.68rem;
+      font-weight: 700;
+    }
+    .inc-link-row a {
+      flex: 1;
+      color: var(--accent);
+      font-family: "Consolas", "Segoe UI Mono", monospace;
+      font-size: 0.78rem;
+      word-break: break-all;
+    }
+    .btn-copiar {
+      flex: none;
+      padding: 5px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: none;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.74rem;
+      cursor: pointer;
+    }
+    .btn-copiar:hover { border-color: var(--accent); }
+
+    .inc-lotes { margin-top: 14px; }
+    .inc-lotes table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    .inc-lotes th, .inc-lotes td {
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+    }
+    .inc-lotes th {
+      color: var(--muted);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .inc-lotes td.resp {
+      font-family: "Consolas", "Segoe UI Mono", monospace;
+      font-size: 0.78rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .estado-ok    { color: var(--ok, #4ade80);  font-weight: 700; }
+    .estado-error { color: var(--err, #f87171); font-weight: 700; }
+  </style>
+
+  <section class="panel">
+    <span class="section-label">Incidencias</span>
+    <p class="inc-aviso">Elige la incidencia, completa los datos y confirma.</p>
+
+    <div class="inc-grid">
+      {% for inc in incidencias %}
+        <button type="button" class="inc-card" data-id="{{ inc.id }}"
+                data-campos='{{ inc.campos | tojson }}' data-titulo="{{ inc.titulo }}">
+          <span class="inc-pais {{ inc.pais }}">{{ inc.pais | upper }}</span>
+          <b>{{ inc.titulo }}</b>
+          <span>{{ inc.descripcion }}</span>
+        </button>
+      {% endfor %}
+    </div>
+
+    <form class="inc-form" id="inc-form" data-no-loading hidden>
+      <span class="section-label" id="inc-form-titulo"></span>
+      <div class="inc-campos" id="inc-campos"></div>
+      <button type="submit" class="btn" id="inc-enviar">Ejecutar</button>
+      <span class="inc-aviso" id="inc-particion"></span>
+    </form>
+
+    <div class="alert error" id="inc-error" hidden></div>
+    <div class="alert ok" id="inc-ok" hidden></div>
+
+    <div class="inc-links" id="inc-links" hidden>
+      <span class="section-label">Archivos generados</span>
+      <div id="inc-links-body"></div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+        <a class="btn-copiar" id="descargar-combinado" href="#" hidden
+           style="text-decoration:none;">Descargar CSV combinado</a>
+        <button type="button" class="btn-copiar" id="copiar-todos">Copiar todos los enlaces</button>
+      </div>
+    </div>
+
+    <div class="inc-lotes" id="inc-lotes" hidden>
+      <span class="section-label">Respuesta por lote</span>
+      <table>
+        <thead>
+          <tr><th>Lote</th><th>Cantidad</th><th>Estado</th><th>Respuesta</th></tr>
+        </thead>
+        <tbody id="inc-lotes-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <script>
+    (function () {
+      var LOTE_MAX = {{ lote_max }};
+      var form       = document.getElementById("inc-form");
+      var tituloEl   = document.getElementById("inc-form-titulo");
+      var camposEl   = document.getElementById("inc-campos");
+      var particion  = document.getElementById("inc-particion");
+      var enviarBtn  = document.getElementById("inc-enviar");
+      var errorEl    = document.getElementById("inc-error");
+      var okEl       = document.getElementById("inc-ok");
+      var lotesEl    = document.getElementById("inc-lotes");
+      var lotesBody  = document.getElementById("inc-lotes-body");
+      var linksEl    = document.getElementById("inc-links");
+      var linksBody  = document.getElementById("inc-links-body");
+      var copiarTodosBtn = document.getElementById("copiar-todos");
+      var combinadoBtn   = document.getElementById("descargar-combinado");
+      var tarjetas   = [].slice.call(document.querySelectorAll(".inc-card"));
+      var actual     = null;
+      var enlaces    = [];
+
+      function esc(v) {
+        return String(v == null ? "" : v)
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function limpiarResultado() {
+        errorEl.hidden = true;
+        okEl.hidden = true;
+        lotesEl.hidden = true;
+        lotesBody.innerHTML = "";
+        linksEl.hidden = true;
+        linksBody.innerHTML = "";
+        combinadoBtn.hidden = true;
+        enlaces = [];
+      }
+
+      // El servidor baja los CSV de los lotes y los junta en uno solo.
+      // Se muestra siempre que haya al menos un archivo: con un solo lote el
+      // combinado es ese mismo archivo, y esconderlo solo genera dudas.
+      function prepararCombinado(data) {
+        if (!data.descarga_id || !data.archivos) return;
+        combinadoBtn.href = "/tickets-comunes/combinado/" + data.descarga_id;
+        combinadoBtn.textContent = data.archivos > 1
+          ? "Descargar CSV combinado (" + data.archivos + " archivos)"
+          : "Descargar CSV";
+        combinadoBtn.hidden = false;
+      }
+
+      // Un enlace por lote: con 14000 salen dos archivos, uno por llamada.
+      function pintarEnlaces(lotes) {
+        enlaces = (lotes || [])
+          .filter(function (l) { return l.ok && l.resumen && l.resumen.file_href; })
+          .map(function (l) { return { lote: l.lote, href: l.resumen.file_href }; });
+        if (!enlaces.length) return;
+
+        linksBody.innerHTML = enlaces.map(function (e) {
+          return '<div class="inc-link-row"><span class="lote-tag">Lote ' + e.lote
+               + '</span><a href="' + esc(e.href) + '" target="_blank" rel="noopener">'
+               + esc(e.href) + "</a>"
+               + '<button type="button" class="btn-copiar" data-href="' + esc(e.href)
+               + '">Copiar</button></div>';
+        }).join("");
+        copiarTodosBtn.hidden = enlaces.length < 2;
+        linksEl.hidden = false;
+      }
+
+      function copiar(texto, boton) {
+        var previo = boton.textContent;
+        function avisar() {
+          boton.textContent = "Copiado";
+          setTimeout(function () { boton.textContent = previo; }, 1400);
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(texto).then(avisar);
+          return;
+        }
+        // Sin clipboard (http en red interna): se copia con un textarea.
+        var area = document.createElement("textarea");
+        area.value = texto;
+        document.body.appendChild(area);
+        area.select();
+        try { document.execCommand("copy"); avisar(); } catch (e) { /* sin copia */ }
+        document.body.removeChild(area);
+      }
+
+      linksBody.addEventListener("click", function (ev) {
+        var boton = ev.target.closest(".btn-copiar");
+        if (boton) copiar(boton.dataset.href, boton);
+      });
+
+      copiarTodosBtn.addEventListener("click", function () {
+        copiar(enlaces.map(function (e) { return e.href; }).join("\n"), copiarTodosBtn);
+      });
+
+      // Muestra en cuantas llamadas se partira la cantidad pedida.
+      function describirParticion() {
+        var input = form.querySelector('[name="cantidad"]');
+        if (!input) { particion.textContent = ""; return; }
+        var total = parseInt(input.value, 10);
+        if (!total || total <= 0) { particion.textContent = ""; return; }
+        if (total <= LOTE_MAX) {
+          particion.textContent = "1 llamada de " + total + " · 1 archivo CSV.";
+          return;
+        }
+        var enteros = Math.floor(total / LOTE_MAX);
+        var resto = total % LOTE_MAX;
+        var llamadas = enteros + (resto ? 1 : 0);
+        // Con lotes de 2000 una cantidad grande da muchas llamadas: se resume
+        // en vez de listar todos los sumandos.
+        var detalle = resto
+          ? enteros + " de " + LOTE_MAX + " y una de " + resto
+          : enteros + " de " + LOTE_MAX;
+        particion.textContent = llamadas + " llamadas (" + detalle + ") · "
+                              + llamadas + " archivos CSV.";
+      }
+
+      function elegir(tarjeta) {
+        actual = tarjeta.dataset.id;
+        tarjetas.forEach(function (t) { t.classList.toggle("activa", t === tarjeta); });
+        tituloEl.textContent = tarjeta.dataset.titulo;
+        camposEl.innerHTML = JSON.parse(tarjeta.dataset.campos).map(function (c) {
+          return '<div class="inc-campo"><label for="campo-' + c.nombre + '">'
+               + esc(c.etiqueta) + "</label>"
+               + '<input id="campo-' + c.nombre + '" name="' + c.nombre + '" type="'
+               + (c.tipo === "number" ? "number" : "text") + '" placeholder="'
+               + esc(c.ejemplo || "") + '"'
+               + (c.tipo === "number" ? ' min="1" step="1"' : "") + " required></div>";
+        }).join("");
+        form.hidden = false;
+        limpiarResultado();
+        particion.textContent = "";
+        var cantidad = form.querySelector('[name="cantidad"]');
+        if (cantidad) cantidad.addEventListener("input", describirParticion);
+        var primero = form.querySelector("input");
+        if (primero) primero.focus();
+      }
+
+      tarjetas.forEach(function (t) {
+        t.addEventListener("click", function () { elegir(t); });
+      });
+
+      // La funcion devuelve un objeto por cada LPN: para 2856 son miles de
+      // entradas. Se muestra el enlace al CSV y el rango, no el volcado.
+      function celdaRespuesta(l) {
+        if (!l.ok) return esc(l.error || "");
+        var r = l.resumen || {};
+        if (!r.file_href) return esc(JSON.stringify(r.respuesta || l.respuesta, null, 2));
+        // El enlace ya esta arriba: aqui va el rango.
+        return esc(r.lpns) + " LPN · " + esc(r.desde) + " → " + esc(r.hasta)
+             + "<br>RFID: " + esc(r.rfid_desde) + " → " + esc(r.rfid_hasta);
+      }
+
+      function pintarLotes(lotes) {
+        lotesBody.innerHTML = (lotes || []).map(function (l) {
+          return "<tr><td>" + l.lote + "</td><td>" + l.cantidad + "</td>"
+               + '<td class="' + (l.ok ? "estado-ok" : "estado-error") + '">'
+               + (l.ok ? "OK" : "ERROR") + "</td>"
+               + '<td class="resp">' + celdaRespuesta(l) + "</td></tr>";
+        }).join("");
+        lotesEl.hidden = false;
+      }
+
+      form.addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        if (!actual) return;
+        limpiarResultado();
+
+        var datos = { incidencia: actual };
+        [].slice.call(form.querySelectorAll("input")).forEach(function (i) {
+          datos[i.name] = i.value.trim();
+        });
+
+        // El servidor corta la sesion seguido y se reintenta hasta 10 veces:
+        // sin un contador a la vista la espera parece un cuelgue.
+        enviarBtn.disabled = true;
+        var segundos = 0;
+        enviarBtn.textContent = "Ejecutando... 0s";
+        particion.textContent = "Reintenta solo si el servidor corta la conexión (hasta 10 veces).";
+        var reloj = setInterval(function () {
+          segundos += 1;
+          enviarBtn.textContent = "Ejecutando... " + segundos + "s";
+        }, 1000);
+
+        // El boton se libera aqui, antes de pintar: si el pintado fallara, el
+        // formulario no puede quedarse en "Ejecutando..." para siempre.
+        function terminar() {
+          if (reloj === null) return;
+          clearInterval(reloj);
+          if (corte) clearTimeout(corte);
+          reloj = null;
+          enviarBtn.disabled = false;
+          enviarBtn.textContent = "Ejecutar";
+          particion.textContent = "Terminó en " + segundos + "s.";
+          // El overlay global de base.html se quita al navegar; aqui no se
+          // navega, asi que se cierra a mano.
+          if (window.sapLoading) window.sapLoading.ocultar();
+        }
+
+        // Red de seguridad: si la conexion muere sin respuesta, se corta la
+        // espera en vez de dejar el boton bloqueado indefinidamente.
+        var corte = null;
+        var opciones = {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(datos)
+        };
+        if (window.AbortController) {
+          var ctrl = new AbortController();
+          opciones.signal = ctrl.signal;
+          corte = setTimeout(function () { ctrl.abort(); }, 15 * 60 * 1000);
+        }
+
+        fetch("/api/tickets-comunes/crear-lpn", opciones)
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            terminar();
+            if (data.lotes) {
+              pintarEnlaces(data.lotes);
+              prepararCombinado(data);
+              pintarLotes(data.lotes);
+            }
+            if (data.ok) {
+              okEl.textContent = "Listo: " + data.creados + " de " + data.solicitado
+                               + " en " + data.lotes.length + " llamada(s).";
+              okEl.hidden = false;
+            } else {
+              errorEl.textContent = data.error
+                || ("Se detuvo tras crear " + (data.creados || 0) + " de " + data.solicitado + ".");
+              errorEl.hidden = false;
+            }
+          })
+          .catch(function (err) {
+            terminar();
+            errorEl.textContent = "Fallo la llamada: " + err.message
+              + ". Revisa en la terminal si alcanzó a crearse antes de repetir.";
+            errorEl.hidden = false;
+          })
+          .finally(terminar);
+      });
+    })();
+  </script>
+{% endblock %}

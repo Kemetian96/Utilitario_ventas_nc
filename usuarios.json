@@ -8,13 +8,14 @@
     ]
   },
   "SOPORTE1": {
-    "password_hash": "scrypt:32768:8:1$X4DKN9GnI1z9dpyG$aa21b375038ce833efce82bd62bf077b889595639a05e39a6559c0e472d398718e31cf44c10ec208ce6e89b70b0279e0fc7110cb86979024f2424552d61ae61f",
+    "password_hash": "scrypt:32768:8:1$qUa0jbiVtJzYs5Y7$270c929352de0e2386756ea216bbe282e83b56a7a8b9e5ec18084f12281b40e8b7f4f7eefb190a287c71b191f864d68300973e3beff009cbf9af495defc37ac0",
     "modulos": [
       "probar-conexiones",
       "validar-articulos",
       "revisar-hilos",
       "por-enviar",
-      "correo"
+      "correo",
+      "tickets"
     ]
   },
   "SOPORTE2": {

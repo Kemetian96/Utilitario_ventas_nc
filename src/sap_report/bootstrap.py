@@ -2,7 +2,7 @@ import dataclasses
 
 from sap_report.application import ReportService
 from sap_report.infrastructure import Settings, load_settings
-from sap_report.infrastructure.db import MySQLRepository, PostgresRepository, SapHanaRepository, SapServiceLayerRepository
+from sap_report.infrastructure.db import LocalStore, MySQLRepository, PostgresRepository, SapHanaRepository, SapServiceLayerRepository
 from sap_report.infrastructure.email import SmtpMailer
 from sap_report.logging_config import configure_logging
 
@@ -35,6 +35,7 @@ def build_service() -> tuple[Settings, ReportService]:
         password=settings.sl_password,
     )
     mailer = SmtpMailer(settings)
+    local_store = LocalStore(settings.local_db_path)
     service = ReportService(
         sap_repository=sap_repository,
         postgres_repository=postgres_repository,
@@ -45,5 +46,6 @@ def build_service() -> tuple[Settings, ReportService]:
         sap_output_path=settings.sap_output_path,
         postgres_output_path=settings.pg_output_path,
         comparacion_output_path=settings.comparacion_output_path,
+        local_store=local_store,
     )
     return settings, service

@@ -25,6 +25,7 @@ TICKETS_PATH = _QUERIES_DIR / "tickets.sql"
 DEVOLUCIONES_PATH = _QUERIES_DIR / "devoluciones.sql"
 RESOLUCION_TICKETS_PATH = _QUERIES_DIR / "resolucion_tickets.sql"
 RESOLUCION_CHANGELOGS_PATH = _QUERIES_DIR / "resolucion_changelogs.sql"
+CREAR_LPN_PATH = _QUERIES_DIR / "crear_lpn.sql"
 
 # Separador de bloques dentro de resolucion_changelogs.sql.
 _SQL_SPLIT = "-- @@"
@@ -53,6 +54,7 @@ class PostgresRepository:
         self._query_devoluciones = DEVOLUCIONES_PATH.read_text(encoding="utf-8")
         self._query_resolucion_tickets = RESOLUCION_TICKETS_PATH.read_text(encoding="utf-8")
         self._query_resolucion_changelogs = RESOLUCION_CHANGELOGS_PATH.read_text(encoding="utf-8")
+        self._query_crear_lpn = CREAR_LPN_PATH.read_text(encoding="utf-8")
         # Conexion persistente opcional. Cuando _sesion_activa es True, las
         # queries reusan self._conn en lugar de abrir/cerrar una nueva cada vez.
         # Si la conexion muere, se reabre automaticamente dentro de la sesion.
@@ -174,6 +176,67 @@ class PostgresRepository:
     def consultar_devoluciones(self) -> tuple[list[tuple[Any, ...]], list[str]]:
         # Query pesada que suele caerse por timeout: hasta 3 intentos.
         return self._ejecutar_sin_params(self._query_devoluciones, reintentos=3)
+
+    def crear_lpn(
+        self,
+        cantidad: int,
+        numeracion: str,
+        proveedor: str,
+        tipo: int,
+    ) -> Any:
+        """Ejecuta la funcion de numeraciones para UN lote. El particionado en
+        lotes de 10000 lo hace ReportService. Conexion propia y cerrada al
+        salir: reutilizarla entre llamadas hace que el servidor corte la sesion.
+        """
+        conn = None
+        cur = None
+        try:
+            conn = self._connect(keepalives=True)
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute(self._query_crear_lpn, (cantidad, numeracion, proveedor, tipo))
+            fila = cur.fetchone()
+            return fila[0] if fila else None
+        finally:
+            if cur:
+                try:
+                    cur.close()
+                except Exception:
+                    pass
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    def contar_reservas_lpn(self, numeracion: str, proveedor: str) -> int:
+        """Cuantas reservas hay ya con esa numeracion y proveedor. Sirve para
+        saber si una llamada que parecio fallar alcanzo a confirmar: sin esto,
+        un reintento crearia el rango dos veces."""
+        conn = None
+        cur = None
+        try:
+            conn = self._connect(keepalives=True)
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute(
+                "select count(*) from main.t_numerations_suppliers "
+                "where description = %s and supplier = %s",
+                (numeracion, proveedor),
+            )
+            fila = cur.fetchone()
+            return int(fila[0]) if fila else 0
+        finally:
+            if cur:
+                try:
+                    cur.close()
+                except Exception:
+                    pass
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def consultar_resolucion_tickets(self) -> tuple[list[tuple[Any, ...]], list[str]]:
         return self._ejecutar_sin_params(self._query_resolucion_tickets, reintentos=3)

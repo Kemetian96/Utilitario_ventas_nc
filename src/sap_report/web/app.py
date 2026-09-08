@@ -1,9 +1,11 @@
 import json
+import logging
 import os
 import shutil
 import subprocess
 import time
 import webbrowser
+from uuid import uuid4
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -12,7 +14,9 @@ from typing import Any
 from flask import Flask, Response, abort, jsonify, redirect, render_template, request, send_file, session, stream_with_context, url_for
 
 from sap_report.application import PAYMENT_ACCOUNT_OPTIONS
+from sap_report.application.report_service import LPN_LOTE_MAX
 from sap_report.bootstrap import build_service
+from sap_report.infrastructure.db import TICKET_ESTADOS
 from sap_report.web.auth import (
     autenticar,
     cambiar_password,
@@ -26,6 +30,26 @@ from sap_report.web.auth import (
 _RESUMEN_CACHE: dict[str, tuple[float, list]] = {}
 _RESUMEN_TTL = 600  # segundos
 
+LOGGER_WEB = logging.getLogger(__name__)
+
+# Enlaces de los CSV por ejecucion de Crear LPN, para armar el combinado.
+# Se guardan en el servidor (no los manda el navegador) y caducan solas.
+_LPN_DESCARGAS: dict[str, dict[str, Any]] = {}
+_LPN_DESCARGAS_TTL = 6 * 3600
+_LPN_DESCARGAS_MAX = 50
+
+
+def _limpiar_descargas_lpn() -> None:
+    ahora = time.time()
+    viejas = [k for k, v in _LPN_DESCARGAS.items()
+              if ahora - v["ts"] > _LPN_DESCARGAS_TTL]
+    for clave in viejas:
+        _LPN_DESCARGAS.pop(clave, None)
+    # Tope duro por si se acumulan muchas dentro del TTL.
+    while len(_LPN_DESCARGAS) >= _LPN_DESCARGAS_MAX:
+        mas_vieja = min(_LPN_DESCARGAS, key=lambda k: _LPN_DESCARGAS[k]["ts"])
+        _LPN_DESCARGAS.pop(mas_vieja, None)
+
 SL_COMPANIES = {
     "COMERCIALMONT": "B1H_COMERCIALMONT_PROD",
     "PEDRAL": "B1H_PEDRAL_PROD",
@@ -37,6 +61,35 @@ SL_BOT_CONFIG = {
     "PEDRAL":        {"U_BOT_TIPO": "VTA_PEDRAL",  "U_BOT_CODCIA": "B1H_PEDRAL_PROD"},
 }
 
+
+# Incidencias del modulo "Tickets Comunes". Cada una declara sus campos y el
+# frontend arma el formulario solo: agregar una nueva es agregar un dict aqui.
+INCIDENCIAS_COMUNES = [
+    {
+        "id": "crear-lpn-pe",
+        "titulo": "Crear LPN (PERÚ)",
+        "descripcion": "Genera numeraciones de proveedor en TUTATI Perú.",
+        "accion": "crear-lpn",
+        "pais": "pe",
+        "campos": [
+            {"nombre": "cantidad", "etiqueta": "Cantidad", "tipo": "number", "ejemplo": "23064"},
+            {"nombre": "numeracion", "etiqueta": "Numeración", "tipo": "text", "ejemplo": "IMP 58-27VER"},
+            {"nombre": "proveedor", "etiqueta": "Proveedor", "tipo": "text", "ejemplo": "JINF"},
+        ],
+    },
+    {
+        "id": "crear-lpn-cl",
+        "titulo": "Crear LPN (CHILE)",
+        "descripcion": "Genera numeraciones de proveedor en TUTATI Chile.",
+        "accion": "crear-lpn",
+        "pais": "cl",
+        "campos": [
+            {"nombre": "cantidad", "etiqueta": "Cantidad", "tipo": "number", "ejemplo": "23064"},
+            {"nombre": "numeracion", "etiqueta": "Numeración", "tipo": "text", "ejemplo": "IMP 58-27VER"},
+            {"nombre": "proveedor", "etiqueta": "Proveedor", "tipo": "text", "ejemplo": "JINF"},
+        ],
+    },
+]
 
 MODULES = [
     {
@@ -138,6 +191,13 @@ MODULES = [
         "sidebar": True,
     },
     {
+        "page": "tickets-comunes",
+        "title": "Tickets Comunes",
+        "subtitle": "Incidencias frecuentes resueltas en un clic.",
+        "url": "/tickets-comunes",
+        "sidebar": True,
+    },
+    {
         "page": "resolucion-rma",
         "title": "Resolución RMA",
         "subtitle": "Devoluciones y su fecha de resolución.",
@@ -179,9 +239,24 @@ def create_app() -> Flask:
     settings, service = build_service()
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.secret_key = os.environ.get("FLASK_SECRET_KEY", "sap-web-secret-key-local")
+    # Sin esto Jinja cachea las plantillas al arrancar y cualquier cambio de
+    # HTML/JS obliga a reiniciar la app. El costo es comprobar la fecha del
+    # archivo en cada render.
+    app.config["TEMPLATES_AUTO_RELOAD"] = True
+    app.jinja_env.auto_reload = True
 
     # Hacer tiene_acceso disponible dentro de cualquier template Jinja.
     app.jinja_env.globals["tiene_acceso"] = tiene_acceso
+
+    @app.after_request
+    def no_cachear_html(respuesta):
+        """Las paginas llevan su JS embebido: si el navegador se queda con una
+        version vieja, la pantalla no coincide con el servidor y parece que los
+        cambios no se aplicaron."""
+        if respuesta.mimetype == "text/html":
+            respuesta.headers["Cache-Control"] = "no-store, must-revalidate"
+            respuesta.headers["Pragma"] = "no-cache"
+        return respuesta
 
     # ── Auth: toda ruta requiere login excepto /login y los estaticos ──
     _RUTAS_PUBLICAS = {"login", "static"}
@@ -1122,6 +1197,107 @@ def create_app() -> Flask:
             return jsonify({"rows": rows, "cols": cols})
         except Exception as exc:
             return jsonify({"rows": [], "cols": [], "error": str(exc)}), 200
+
+    @app.post("/api/tickets/marca")
+    @requiere_modulo("tickets")
+    def api_marcar_ticket():
+        data = request.get_json(silent=True) or {}
+        uid = str(data.get("uid_tickets", "")).strip()
+        estado = str(data.get("estado", "")).strip()
+        if not uid or estado not in TICKET_ESTADOS:
+            return jsonify({"ok": False, "error": "Ticket o estado invalido"}), 400
+        try:
+            marca = service.marcar_ticket(uid, estado, usuario_actual())
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+        return jsonify({"ok": True, "marca": marca})
+
+    @app.get("/tickets-comunes")
+    @requiere_modulo("tickets-comunes")
+    def tickets_comunes() -> str:
+        return render_template(
+            "tickets_comunes.html",
+            current_page="tickets-comunes",
+            incidencias=INCIDENCIAS_COMUNES,
+            lote_max=LPN_LOTE_MAX,
+        )
+
+    @app.post("/api/tickets-comunes/crear-lpn")
+    @requiere_modulo("tickets-comunes")
+    def api_crear_lpn():
+        data = request.get_json(silent=True) or {}
+        incidencia = next(
+            (i for i in INCIDENCIAS_COMUNES
+             if i["id"] == str(data.get("incidencia", "")) and i["accion"] == "crear-lpn"),
+            None,
+        )
+        if incidencia is None:
+            return jsonify({"ok": False, "error": "Incidencia no valida"}), 400
+
+        try:
+            cantidad = int(str(data.get("cantidad", "")).strip())
+        except ValueError:
+            return jsonify({"ok": False, "error": "La cantidad debe ser un numero entero"}), 400
+
+        numeracion = str(data.get("numeracion", "")).strip()
+        proveedor = str(data.get("proveedor", "")).strip()
+        try:
+            resultados = service.crear_lpn(
+                incidencia["pais"], cantidad, numeracion, proveedor
+            )
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+        creados = sum(r["cantidad"] for r in resultados if r.get("ok"))
+        # La funcion devuelve un objeto por LPN (miles): al navegador solo va
+        # el resumen con el enlace al CSV y el rango.
+        lotes = [{k: v for k, v in r.items() if k != "respuesta"} for r in resultados]
+
+        # Los enlaces quedan guardados aqui para poder ofrecer el combinado:
+        # asi el servidor solo descarga URLs que genero el mismo.
+        urls = [r["resumen"]["file_href"] for r in resultados
+                if r.get("ok") and r.get("resumen", {}).get("file_href")]
+        descarga_id = None
+        if urls:
+            descarga_id = uuid4().hex
+            _limpiar_descargas_lpn()
+            _LPN_DESCARGAS[descarga_id] = {
+                "urls": urls,
+                "nombre": f"lpn-{proveedor}-{numeracion}".replace(" ", "_"),
+                "ts": time.time(),
+            }
+
+        return jsonify({
+            "ok": all(r.get("ok") for r in resultados),
+            "solicitado": cantidad,
+            "creados": creados,
+            "lotes": lotes,
+            "descarga_id": descarga_id,
+            "archivos": len(urls),
+        })
+
+    @app.get("/tickets-comunes/combinado/<descarga_id>")
+    @requiere_modulo("tickets-comunes")
+    def descargar_lpn_combinado(descarga_id: str):
+        datos = _LPN_DESCARGAS.get(descarga_id)
+        if datos is None:
+            abort(404)
+        try:
+            contenido, resumen = service.combinar_csv_lpn(datos["urls"])
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 502
+
+        LOGGER_WEB.info("CSV combinado servido: %s", resumen)
+        return Response(
+            contenido,
+            mimetype="text/csv",
+            headers={
+                "Content-Disposition":
+                    f'attachment; filename="{datos["nombre"]}-combinado.csv"'
+            },
+        )
 
     @app.get("/devoluciones")
     @requiere_modulo("devoluciones")

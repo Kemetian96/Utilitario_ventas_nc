@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(python -c \"from werkzeug.security import generate_password_hash; print\\(generate_password_hash\\('Primer4L1#'\\)\\)\")",
+      "PowerShell(python -c \"import json;from werkzeug.security import check_password_hash;u=json.load\\(open\\(r'c:\\\\Proyectos\\\\SAP WEB\\\\usuarios.json'\\)\\)['SOPORTE1'];print\\(check_password_hash\\(u['password_hash'],'Primer4L1#'\\), u['modulos']\\)\")",
+      "PowerShell(python \"C:\\\\Users\\\\Esencia\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Proyectos-SAP-WEB\\\\6d4fc60a-4c0a-4b72-a1f5-9bd4c6ffaa4e\\\\scratchpad\\\\prueba_local_store.py\")",
+      "PowerShell(python \"C:\\\\Users\\\\Esencia\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Proyectos-SAP-WEB\\\\6d4fc60a-4c0a-4b72-a1f5-9bd4c6ffaa4e\\\\scratchpad\\\\prueba_render.py\")",
+      "PowerShell(python \"C:\\\\Users\\\\Esencia\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Proyectos-SAP-WEB\\\\6d4fc60a-4c0a-4b72-a1f5-9bd4c6ffaa4e\\\\scratchpad\\\\prueba_http.py\")",
+      "PowerShell($env:PYTHONPATH=\"c:\\\\Proyectos\\\\SAP WEB\\\\src\"; python -m pytest \"c:\\\\Proyectos\\\\SAP WEB\\\\tests\" -q)"
+    ]
+  }
+}
