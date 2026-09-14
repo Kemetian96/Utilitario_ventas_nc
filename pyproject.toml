@@ -16,6 +16,7 @@ dependencies = [
   "pymysql",
   "python-dotenv",
   "requests",
+  "paramiko",
 ]
 
 [project.scripts]

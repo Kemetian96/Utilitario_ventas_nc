@@ -38,6 +38,24 @@
     }
     .inc-pais.pe { background: rgba(124,156,255,0.16); color: var(--accent); }
     .inc-pais.cl { background: rgba(74,222,128,0.16);  color: var(--ok); }
+    .inc-pais.mm { background: rgba(250,204,21,0.16);  color: #facc15; }
+
+    /* El script imprime su propio detalle: se muestra tal cual, sin resumir. */
+    .inc-salida { margin-top: 14px; }
+    .inc-salida[hidden] { display: none; }
+    .inc-salida pre {
+      margin: 8px 0 0;
+      padding: 11px 13px;
+      max-height: 340px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.02);
+      font-family: "Consolas", "Segoe UI Mono", monospace;
+      font-size: 0.78rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
 
     .inc-form { margin-top: 18px; }
     .inc-form[hidden] { display: none; }
@@ -145,7 +163,8 @@
     <div class="inc-grid">
       {% for inc in incidencias %}
         <button type="button" class="inc-card" data-id="{{ inc.id }}"
-                data-campos='{{ inc.campos | tojson }}' data-titulo="{{ inc.titulo }}">
+                data-campos='{{ inc.campos | tojson }}' data-titulo="{{ inc.titulo }}"
+                data-accion="{{ inc.accion }}">
           <span class="inc-pais {{ inc.pais }}">{{ inc.pais | upper }}</span>
           <b>{{ inc.titulo }}</b>
           <span>{{ inc.descripcion }}</span>
@@ -167,10 +186,15 @@
       <span class="section-label">Archivos generados</span>
       <div id="inc-links-body"></div>
       <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
-        <a class="btn-copiar" id="descargar-combinado" href="#" hidden
+        <a class="btn-copiar" id="descargar-combinado" href="#" hidden download
            style="text-decoration:none;">Descargar CSV combinado</a>
         <button type="button" class="btn-copiar" id="copiar-todos">Copiar todos los enlaces</button>
       </div>
+    </div>
+
+    <div class="inc-salida" id="inc-salida" hidden>
+      <span class="section-label">Salida del servidor</span>
+      <pre id="inc-salida-body"></pre>
     </div>
 
     <div class="inc-lotes" id="inc-lotes" hidden>
@@ -194,6 +218,8 @@
       var enviarBtn  = document.getElementById("inc-enviar");
       var errorEl    = document.getElementById("inc-error");
       var okEl       = document.getElementById("inc-ok");
+      var salidaEl   = document.getElementById("inc-salida");
+      var salidaBody = document.getElementById("inc-salida-body");
       var lotesEl    = document.getElementById("inc-lotes");
       var lotesBody  = document.getElementById("inc-lotes-body");
       var linksEl    = document.getElementById("inc-links");
@@ -202,7 +228,14 @@
       var combinadoBtn   = document.getElementById("descargar-combinado");
       var tarjetas   = [].slice.call(document.querySelectorAll(".inc-card"));
       var actual     = null;
+      var accion     = null;
       var enlaces    = [];
+
+      // Cada incidencia pega en su propio endpoint y pinta distinto.
+      var ENDPOINTS = {
+        "crear-lpn": "/api/tickets-comunes/crear-lpn",
+        "crear-mattermost": "/api/tickets-comunes/crear-mattermost"
+      };
 
       function esc(v) {
         return String(v == null ? "" : v)
@@ -218,6 +251,8 @@
         linksEl.hidden = true;
         linksBody.innerHTML = "";
         combinadoBtn.hidden = true;
+        salidaEl.hidden = true;
+        salidaBody.textContent = "";
         enlaces = [];
       }
 
@@ -303,6 +338,7 @@
 
       function elegir(tarjeta) {
         actual = tarjeta.dataset.id;
+        accion = tarjeta.dataset.accion;
         tarjetas.forEach(function (t) { t.classList.toggle("activa", t === tarjeta); });
         tituloEl.textContent = tarjeta.dataset.titulo;
         camposEl.innerHTML = JSON.parse(tarjeta.dataset.campos).map(function (c) {
@@ -362,7 +398,9 @@
         enviarBtn.disabled = true;
         var segundos = 0;
         enviarBtn.textContent = "Ejecutando... 0s";
-        particion.textContent = "Reintenta solo si el servidor corta la conexión (hasta 10 veces).";
+        particion.textContent = accion === "crear-mattermost"
+          ? "Ejecutando el script en el servidor de Mattermost."
+          : "Reintenta solo si el servidor corta la conexión (hasta 10 veces).";
         var reloj = setInterval(function () {
           segundos += 1;
           enviarBtn.textContent = "Ejecutando... " + segundos + "s";
@@ -397,18 +435,25 @@
           corte = setTimeout(function () { ctrl.abort(); }, 15 * 60 * 1000);
         }
 
-        fetch("/api/tickets-comunes/crear-lpn", opciones)
+        fetch(ENDPOINTS[accion] || ENDPOINTS["crear-lpn"], opciones)
           .then(function (res) { return res.json(); })
           .then(function (data) {
             terminar();
+            // El script de Mattermost imprime su propio detalle.
+            if (data.salida) {
+              salidaBody.textContent = data.salida;
+              salidaEl.hidden = false;
+            }
             if (data.lotes) {
               pintarEnlaces(data.lotes);
               prepararCombinado(data);
               pintarLotes(data.lotes);
             }
             if (data.ok) {
-              okEl.textContent = "Listo: " + data.creados + " de " + data.solicitado
-                               + " en " + data.lotes.length + " llamada(s).";
+              okEl.textContent = accion === "crear-mattermost"
+                ? ("Usuario creado: " + data.nombre + " · " + data.documento + ".")
+                : ("Listo: " + data.creados + " de " + data.solicitado
+                   + " en " + data.lotes.length + " llamada(s).");
               okEl.hidden = false;
             } else {
               errorEl.textContent = data.error

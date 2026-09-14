@@ -7,3 +7,4 @@ pytest
 hdbcli
 pymysql
 requests
+paramiko

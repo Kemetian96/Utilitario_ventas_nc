@@ -39,6 +39,12 @@ LPN_INTENTOS = 10
 LPN_ESPERA_REINTENTO = 6
 
 
+# Alta de Mattermost: el nombre viaja como argumento del script, asi que se
+# limita a letras, espacios y los signos que trae un nombre real.
+MM_NOMBRE_RE = re.compile(r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ .'-]{1,79}$")
+MM_DOCUMENTO_RE = re.compile(r"^[A-Za-z0-9]{6,15}$")
+
+
 def _es_url_de_numeraciones(url: str) -> bool:
     """Los CSV viven en el bucket de la cuenta, bajo numerations-suppliers/.
     Cualquier otra direccion se rechaza."""
@@ -92,6 +98,7 @@ class ReportService:
         comparacion_output_path: Path,
         postgres_chile_repository: PostgresRepository | None = None,
         local_store: LocalStore | None = None,
+        mattermost_repository: Any | None = None,
     ) -> None:
         # Dependencias de acceso a datos y rutas de salida.
         self._sap_repository = sap_repository
@@ -101,6 +108,7 @@ class ReportService:
         self._sl_repository = sl_repository
         self._mailer = mailer
         self._local_store = local_store
+        self._mattermost_repository = mattermost_repository
         self._sap_output_path = sap_output_path
         self._postgres_output_path = postgres_output_path
         self._comparacion_output_path = comparacion_output_path
@@ -798,6 +806,35 @@ class ReportService:
         if self._local_store is None:
             raise RuntimeError("No hay base local configurada.")
         return self._local_store.guardar_marca_ticket(uid_tickets, estado, usuario)
+
+    def crear_usuario_mattermost(self, nombre: str, documento: str) -> dict[str, Any]:
+        """Corre el alta de usuario de Mattermost en el servidor por SSH.
+
+        Es el mismo script que se ejecuta a mano en la terminal; la web solo
+        arma la linea y devuelve lo que el script imprime.
+        """
+        if self._mattermost_repository is None:
+            raise RuntimeError(
+                "Mattermost no esta configurado. Falta MATTERMOST_SSH_HOST en .env"
+            )
+
+        # Un nombre con varios espacios seguidos crea un usuario distinto al
+        # que se ve en pantalla: se normaliza antes de validar.
+        nombre_limpio = " ".join(nombre.split())
+        documento_limpio = documento.strip()
+        if not MM_NOMBRE_RE.match(nombre_limpio):
+            raise ValueError(
+                "El nombre solo admite letras, espacios, punto, guion y apostrofe "
+                "(entre 2 y 80 caracteres)."
+            )
+        if not MM_DOCUMENTO_RE.match(documento_limpio):
+            raise ValueError("El documento debe tener entre 6 y 15 letras o numeros.")
+
+        LOGGER.info("Crear usuario Mattermost: %s | %s", nombre_limpio, documento_limpio)
+        resultado = self._mattermost_repository.crear_usuario(nombre_limpio, documento_limpio)
+        resultado["nombre"] = nombre_limpio
+        resultado["documento"] = documento_limpio
+        return resultado
 
     def crear_lpn(
         self,

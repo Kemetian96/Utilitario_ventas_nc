@@ -93,6 +93,15 @@ class Settings:
     mysql_password: Optional[str]
     mysql_port: Optional[int]
     mysql_connect_timeout: Optional[int]
+    # Mattermost: el alta de usuarios es un script en un Linux, por SSH
+    mattermost_ssh_host: Optional[str]
+    mattermost_ssh_port: int
+    mattermost_ssh_user: Optional[str]
+    mattermost_ssh_password: Optional[str]
+    mattermost_sudo_password: Optional[str]
+    mattermost_dir: str
+    mattermost_script: str
+    mattermost_timeout: int
     # Salidas
     sap_output_path: Path
     pg_output_path: Path
@@ -158,6 +167,16 @@ def load_settings() -> Settings:
         mysql_password=_get_optional_env("MYSQL_PASSWORD"),
         mysql_port=_get_optional_int("MYSQL_PORT"),
         mysql_connect_timeout=_get_optional_int("MYSQL_CONNECT_TIMEOUT"),
+        mattermost_ssh_host=_get_optional_env("MATTERMOST_SSH_HOST"),
+        mattermost_ssh_port=_get_optional_int("MATTERMOST_SSH_PORT") or 22,
+        mattermost_ssh_user=_get_optional_env("MATTERMOST_SSH_USER"),
+        mattermost_ssh_password=_get_optional_env("MATTERMOST_SSH_PASSWORD"),
+        # Vacia = sudo usa la misma clave con la que se entro por SSH, que es
+        # lo normal cuando la cuenta de servicio es la del propio operador.
+        mattermost_sudo_password=_get_optional_env("MATTERMOST_SUDO_PASSWORD"),
+        mattermost_dir=_get_optional_env("MATTERMOST_DIR") or "mattermost",
+        mattermost_script=_get_optional_env("MATTERMOST_SCRIPT") or "./crear_usuario_individual.sh",
+        mattermost_timeout=_get_optional_int("MATTERMOST_TIMEOUT") or 180,
         sap_output_path=Path(_get_env("SAP_OUTPUT_PATH", str(Path("OUTPUT") / "SAP.xlsx"))),
         pg_output_path=Path(_get_env("PG_OUTPUT_PATH", str(Path("OUTPUT") / "TUTATI.xlsx"))),
         comparacion_output_path=Path(_get_env("COMPARACION_OUTPUT_PATH", str(Path("OUTPUT") / "COMPARACION.xlsx"))),

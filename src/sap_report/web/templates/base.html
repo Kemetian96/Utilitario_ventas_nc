@@ -463,8 +463,9 @@
         var overlay     = document.getElementById("loading-overlay");
         var loadingText = document.getElementById("loading-text");
         var shown       = false;
+        var failsafeId  = null;
 
-        function scheduleLoading(msg) {
+        function scheduleLoading(msg, failsafeMs) {
           if (shown || !overlay) return;
           setTimeout(function () {
             if (shown) return;
@@ -472,6 +473,9 @@
             loadingText.textContent = msg || "Procesando solicitud…";
             overlay.classList.add("visible");
             document.body.style.cursor = "progress";
+            /* Una descarga (Content-Disposition) no navega: la pagina se
+               queda igual y el overlay nunca se iria solo. */
+            if (failsafeMs) failsafeId = setTimeout(hideLoading, failsafeMs);
           }, 2000);
         }
 
@@ -479,9 +483,14 @@
            fetch nunca navega, asi que hay que poder quitarlo a mano. */
         function hideLoading() {
           shown = false;
+          if (failsafeId) { clearTimeout(failsafeId); failsafeId = null; }
           if (overlay) overlay.classList.remove("visible");
           document.body.style.cursor = "";
         }
+
+        /* Volver con el boton atras restaura la pagina desde cache con el
+           overlay puesto: hay que limpiarlo. */
+        window.addEventListener("pageshow", hideLoading);
         window.sapLoading = { mostrar: scheduleLoading, ocultar: hideLoading };
 
         document.querySelectorAll("form").forEach(function (f) {
@@ -499,7 +508,7 @@
             var href = a.getAttribute("href");
             if (!href || href.startsWith("#") || a.target === "_blank" || a.hasAttribute("download")) return;
             if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
-            scheduleLoading("Cargando módulo…");
+            scheduleLoading("Cargando módulo…", 30000);
           });
         });
 

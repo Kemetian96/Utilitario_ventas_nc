@@ -89,6 +89,17 @@ INCIDENCIAS_COMUNES = [
             {"nombre": "proveedor", "etiqueta": "Proveedor", "tipo": "text", "ejemplo": "JINF"},
         ],
     },
+    {
+        "id": "crear-mattermost",
+        "titulo": "Crear Mattermost",
+        "descripcion": "Da de alta un usuario en Mattermost con su nombre y documento.",
+        "accion": "crear-mattermost",
+        "pais": "mm",
+        "campos": [
+            {"nombre": "nombre", "etiqueta": "Nombre y apellido", "tipo": "text", "ejemplo": "CHRISTIAN CCOLLANA"},
+            {"nombre": "documento", "etiqueta": "Documento", "tipo": "text", "ejemplo": "43855521"},
+        ],
+    },
 ]
 
 MODULES = [
@@ -1277,6 +1288,41 @@ def create_app() -> Flask:
             "descarga_id": descarga_id,
             "archivos": len(urls),
         })
+
+    @app.post("/api/tickets-comunes/crear-mattermost")
+    @requiere_modulo("tickets-comunes")
+    def api_crear_mattermost():
+        data = request.get_json(silent=True) or {}
+        incidencia = next(
+            (i for i in INCIDENCIAS_COMUNES
+             if i["id"] == str(data.get("incidencia", "")) and i["accion"] == "crear-mattermost"),
+            None,
+        )
+        if incidencia is None:
+            return jsonify({"ok": False, "error": "Incidencia no valida"}), 400
+
+        try:
+            resultado = service.crear_usuario_mattermost(
+                str(data.get("nombre", "")),
+                str(data.get("documento", "")),
+            )
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            LOGGER_WEB.exception("Crear usuario Mattermost fallo")
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+        LOGGER_WEB.info(
+            "Mattermost %s: %s (%s) por %s",
+            "OK" if resultado["ok"] else "ERROR",
+            resultado["nombre"], resultado["documento"], usuario_actual(),
+        )
+        if not resultado["ok"]:
+            resultado["error"] = (
+                f"El script termino con codigo {resultado['codigo']}. "
+                "Revisa la salida."
+            )
+        return jsonify(resultado)
 
     @app.get("/tickets-comunes/combinado/<descarga_id>")
     @requiere_modulo("tickets-comunes")

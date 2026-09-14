@@ -1,9 +1,11 @@
 import dataclasses
+import logging
 
 from sap_report.application import ReportService
 from sap_report.infrastructure import Settings, load_settings
 from sap_report.infrastructure.db import LocalStore, MySQLRepository, PostgresRepository, SapHanaRepository, SapServiceLayerRepository
 from sap_report.infrastructure.email import SmtpMailer
+from sap_report.infrastructure.remote import MattermostSshRepository
 from sap_report.logging_config import configure_logging
 
 
@@ -36,6 +38,14 @@ def build_service() -> tuple[Settings, ReportService]:
     )
     mailer = SmtpMailer(settings)
     local_store = LocalStore(settings.local_db_path)
+    # Mattermost es opcional: sin credenciales la app arranca igual y solo
+    # ese modulo avisa que falta configurarlo.
+    mattermost_repository = None
+    if settings.mattermost_ssh_host:
+        try:
+            mattermost_repository = MattermostSshRepository(settings)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Mattermost no disponible: %s", exc)
     service = ReportService(
         sap_repository=sap_repository,
         postgres_repository=postgres_repository,
@@ -47,5 +57,6 @@ def build_service() -> tuple[Settings, ReportService]:
         postgres_output_path=settings.pg_output_path,
         comparacion_output_path=settings.comparacion_output_path,
         local_store=local_store,
+        mattermost_repository=mattermost_repository,
     )
     return settings, service
