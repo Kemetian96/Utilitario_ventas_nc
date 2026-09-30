@@ -206,7 +206,7 @@
       <span class="tickets-meta">
         <span class="dot-live" id="tickets-live"></span>
         <span id="tickets-count">{{ rows | length }}</span> registro(s) ·
-        actualiza cada 5 min · <span id="tickets-updated">ahora</span>
+        actualiza cada 1 min · <span id="tickets-updated">ahora</span>
       </span>
     </div>
 
@@ -225,7 +225,7 @@
       {% for valor, etiqueta in ESTADOS %}
         <span><i class="sem-color-{{ valor }}"></i> {{ etiqueta }}</span>
       {% endfor %}
-      <span>Clic en la bolita para cambiar. La marca queda guardada aunque pasen semanas.</span>
+      <span>Clic en la bolita para cambiar.</span>
     </div>
 
     {% macro fila_ticket(row, con_asignado) %}
@@ -315,7 +315,7 @@
 
   <script>
     (function () {
-      var REFRESH_MS = 5 * 60 * 1000;  // 5 minutos
+      var REFRESH_MS = 60 * 1000;  // 1 minuto
       var GRUPOS = {
         sin:  { body: document.getElementById("body-sin-asignar"),
                 count: document.getElementById("count-sin-asignar"),

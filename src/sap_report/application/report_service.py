@@ -729,9 +729,22 @@ class ReportService:
             return None
         return dict(zip(cols, rows[0]))
 
+    @staticmethod
+    def _fechas_nubefact(today: date) -> list[date]:
+        """Fechas a consultar: el mes en curso hasta ayer, de la mas reciente a
+        la mas antigua. En los primeros dias del mes eso deja casi nada que ver,
+        asi que del 1 al 7 se agregan ademas los ultimos 7 dias del mes anterior."""
+        primero = today.replace(day=1)
+        fechas = [
+            today - timedelta(days=i)
+            for i in range(1, (today - primero).days + 1)
+        ]
+        if today.day <= 7:
+            fechas += [primero - timedelta(days=i) for i in range(1, 8)]
+        return fechas
+
     def consultar_nubefact(self) -> tuple[list[dict[str, Any]], list[str]]:
-        today = date.today()
-        fechas = [today - timedelta(days=i) for i in range(1, 8)]
+        fechas = self._fechas_nubefact(date.today())
         # {fecha_str: {estado: cantidad}}
         pivot: dict[str, dict[str, Any]] = {}
         all_estados: list[str] = []

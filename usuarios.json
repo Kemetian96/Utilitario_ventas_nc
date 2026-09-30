@@ -23,5 +23,11 @@
     "modulos": [
       "*"
     ]
+  },
+  "JMONTOYA": {
+    "password_hash": "scrypt:32768:8:1$GudGc3dTRgH1GaSe$560d27a65882be4a5f545f2c6f224b4c34a3dcabc538a265d208f236c9ecb44132a7bb5c465653ac16abb4367a247092fef560741c358efe9da7387d807ba930",
+    "modulos": [
+      "*"
+    ]
   }
 }

@@ -183,7 +183,7 @@ MODULES = [
     {
         "page": "validacion-nubefact",
         "title": "Validación Nubefact",
-        "subtitle": "Visor de documentos Nubefact últimos 7 días.",
+        "subtitle": "Visor de documentos Nubefact del mes en curso.",
         "url": "/validacion-nubefact",
         "sidebar": True,
     },
