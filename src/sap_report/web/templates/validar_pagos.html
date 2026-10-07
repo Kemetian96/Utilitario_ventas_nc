@@ -108,8 +108,24 @@
           </div>
 
           <div class="actions">
-            <button class="button" type="submit">Ejecutar validación</button>
+            <button class="button {{ '' if periodo_value == 'dia' else 'ghost' }}"
+                    type="submit" name="periodo" value="dia">
+              Ejecutar validación
+            </button>
+            <button class="button {{ '' if periodo_value == 'mes_actual' else 'ghost' }}"
+                    type="submit" name="periodo" value="mes_actual"
+                    title="Del día 1 del mes en curso hasta hoy">
+              Mes actual
+            </button>
+            <button class="button {{ '' if periodo_value == 'mes_pasado' else 'ghost' }}"
+                    type="submit" name="periodo" value="mes_pasado"
+                    title="Todo el mes anterior, completo">
+              Mes pasado
+            </button>
           </div>
+          <span class="resumen-fecha-tag">
+            "Ejecutar validación" usa la fecha de arriba. Los botones de mes la ignoran.
+          </span>
         </form>
 
         {% if error %}
@@ -119,7 +135,10 @@
 
       {% if result %}
         <section class="panel">
-          <span class="section-label">{{ result.fecha }} · {{ result.tipo_pago }}</span>
+          <span class="section-label">
+            {{ result.fecha }} · {{ result.tipo_pago }}
+            {% if result.dias and result.dias > 1 %} · {{ result.dias }} días{% endif %}
+          </span>
           <div class="summary-grid">
             <div class="summary-card">
               <span>SAP</span>

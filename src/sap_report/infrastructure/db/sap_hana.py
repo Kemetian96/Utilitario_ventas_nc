@@ -188,14 +188,16 @@ class SapHanaRepository:
         self,
         fecha_inicio: date,
         fecha_fin: date,
-        account_name: str,
+        account_name: str | list[str],
     ) -> tuple[list[tuple[Any, ...]], list[str]]:
-        account_name_safe = account_name.replace("'", "''")
+        # Un tipo de pago puede abarcar varias cuentas de SAP, asi que acepta
+        # un nombre o una lista.
+        cuentas = [account_name] if isinstance(account_name, str) else list(account_name)
         sql = (
             self._query_validar_pagos
             .replace("{{fecha_inicio}}", fecha_inicio.strftime("%Y-%m-%d"))
             .replace("{{fecha_fin}}", fecha_fin.strftime("%Y-%m-%d"))
-            .replace("{{account_name}}", account_name_safe)
+            .replace("{{account_names_in}}", _render_in_list(cuentas))
         )
         return self._ejecutar_sql(sql)
 

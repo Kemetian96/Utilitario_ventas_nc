@@ -117,13 +117,22 @@
 
       {% if rows %}
         {% if tipo_value in ('pendientes', 'ventas_nc', 'venta_doble') %}
-          <div style="margin-bottom: 12px;">
+          <div style="margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
             <button class="button" type="button" id="btn-enviar-todos"
                     data-fecha-inicio="{{ fecha_inicio_value }}"
                     data-fecha-fin="{{ fecha_fin_value }}"
                     data-tipo="{{ tipo_value }}">
               Enviar todos
             </button>
+            {% if tipo_value == 'pendientes' %}
+              <form method="post" data-loading-text="Validando stock de todos los pendientes...">
+                <input type="hidden" name="accion" value="validar_todo">
+                <input type="hidden" name="fecha_inicio" value="{{ fecha_inicio_value }}">
+                <input type="hidden" name="fecha_fin" value="{{ fecha_fin_value }}">
+                <input type="hidden" name="tipo" value="{{ tipo_value }}">
+                <button class="button ghost" type="submit">Validar todo</button>
+              </form>
+            {% endif %}
           </div>
         {% endif %}
         <div class="table-wrap">
@@ -268,6 +277,108 @@
             document.removeEventListener("keydown", onEsc);
           }
         });
+      })();
+    </script>
+  {% endif %}
+
+  {% if validacion_todo %}
+    <div class="modal-overlay" id="validacion-todo-modal">
+      <div class="modal-card" style="max-width: 1100px;">
+        <button class="modal-close" type="button" aria-label="Cerrar"
+                onclick="document.getElementById('validacion-todo-modal').remove()">&times;</button>
+        <div class="modal-title">
+          Validación de todos los pendientes ·
+          {{ validacion_todo.documentos }} documento{{ 's' if validacion_todo.documentos != 1 else '' }}
+        </div>
+
+        {% if validacion_todo.faltantes %}
+          <div class="alert error" style="margin-bottom:12px;">
+            {{ validacion_todo.faltantes | length }} artículo(s) sin stock suficiente
+            en {{ validacion_todo.documentos_con_falta }} documento{{ 's' if validacion_todo.documentos_con_falta != 1 else '' }}
+            (de {{ validacion_todo.items_total }} item(s) revisados).
+          </div>
+          <div class="actions" style="margin-bottom:10px;">
+            <button class="button ghost inline-small" type="button" id="btn-copiar-faltantes">
+              Copiar tabla
+            </button>
+          </div>
+          <div class="table-wrap">
+            <table id="tabla-faltantes">
+              <thead>
+                <tr>
+                  <th>Movimiento</th>
+                  <th>id_document</th>
+                  <th>Articulo</th>
+                  <th>Almacen</th>
+                  <th>Necesario</th>
+                  <th>Hay</th>
+                  <th>Falta</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for f in validacion_todo.faltantes %}
+                  <tr>
+                    <td>{{ f.movimiento }}</td>
+                    <td>{{ f.id_document }}</td>
+                    <td>{{ f.articulo }}</td>
+                    <td>{{ f.almacen }}</td>
+                    <td>{{ "%.0f"|format(f.necesario) }}</td>
+                    <td>{{ "%.0f"|format(f.hay) }}</td>
+                    <td>{{ "%.0f"|format(f.falta) }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="alert ok">
+            Ningún faltante · los {{ validacion_todo.items_total }} item(s) de
+            {{ validacion_todo.documentos }} documento(s) tienen stock suficiente.
+          </div>
+        {% endif %}
+
+        {% if validacion_todo.documentos_sin_items %}
+          <div class="alert" style="margin-top:12px;">
+            {{ validacion_todo.documentos_sin_items | length }} documento(s) sin items:
+            {{ validacion_todo.documentos_sin_items | join(', ') }}
+          </div>
+        {% endif %}
+        {% if validacion_todo.tipos_no_soportados %}
+          <div class="alert" style="margin-top:12px;">
+            Tipos que no se pueden validar, quedaron fuera:
+            {{ validacion_todo.tipos_no_soportados | join(', ') }}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+    <script>
+      (function () {
+        var overlay = document.getElementById("validacion-todo-modal");
+        if (!overlay) return;
+        overlay.addEventListener("click", function (e) {
+          if (e.target === overlay) overlay.remove();
+        });
+        document.addEventListener("keydown", function onEsc(e) {
+          if (e.key === "Escape") {
+            overlay.remove();
+            document.removeEventListener("keydown", onEsc);
+          }
+        });
+        var boton = document.getElementById("btn-copiar-faltantes");
+        var tabla = document.getElementById("tabla-faltantes");
+        if (boton && tabla) {
+          boton.addEventListener("click", function () {
+            var texto = Array.prototype.map.call(tabla.querySelectorAll("tr"), function (tr) {
+              return Array.prototype.map.call(tr.querySelectorAll("th, td"), function (c) {
+                return c.textContent.trim();
+              }).join("\t");
+            }).join("\n");
+            navigator.clipboard.writeText(texto).then(function () {
+              boton.textContent = "Copiado";
+              setTimeout(function () { boton.textContent = "Copiar tabla"; }, 1500);
+            });
+          });
+        }
       })();
     </script>
   {% endif %}

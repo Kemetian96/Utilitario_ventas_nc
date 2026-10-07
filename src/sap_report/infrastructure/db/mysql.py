@@ -106,7 +106,7 @@ class MySQLRepository:
         ids: list[int],
     ) -> tuple[list[tuple[Any, ...]], list[str]]:
         if not ids:
-            return [], ["articulo", "centro", "cantidad"]
+            return [], ["articulo", "centro", "cantidad", "id_document"]
         ids_in = ", ".join(str(int(i)) for i in ids)
         sql = self._query_validar_outbound.replace("{{id_outbounds_in}}", ids_in)
         return self.ejecutar_sql(sql)
@@ -116,7 +116,7 @@ class MySQLRepository:
         ids: list[int],
     ) -> tuple[list[tuple[Any, ...]], list[str]]:
         if not ids:
-            return [], ["articulo", "centro", "cantidad"]
+            return [], ["articulo", "centro", "cantidad", "id_document"]
         ids_in = ", ".join(str(int(i)) for i in ids)
         sql = self._query_validar_inbound.replace("{{id_inbounds_in}}", ids_in)
         return self.ejecutar_sql(sql)

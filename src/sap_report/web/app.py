@@ -586,16 +586,21 @@ def create_app() -> Flask:
     def validar_pagos() -> str:
         fecha_value = (date.today() - timedelta(days=1)).isoformat()
         tipo_pago_value = "Tarjetas Visanet"
+        periodo_value = "dia"
         result: dict[str, Any] | None = None
         error: str | None = None
 
         if request.method == "POST":
             fecha_value = request.form.get("fecha", fecha_value).strip()
             tipo_pago_value = request.form.get("tipo_pago", tipo_pago_value).strip()
+            periodo_value = request.form.get("periodo", "dia").strip()
             try:
-                fecha_pago = _parse_date(fecha_value)
-                result = service.validar_pagos(
-                    fecha=fecha_pago,
+                inicio, fin = _rango_validar_pagos(
+                    periodo_value, date.today(), _parse_date(fecha_value)
+                )
+                result = service.validar_pagos_rango(
+                    fecha_inicio=inicio,
+                    fecha_fin=fin,
                     account_name=tipo_pago_value,
                 )
             except Exception as exc:
@@ -606,6 +611,7 @@ def create_app() -> Flask:
             current_page="validar-pagos",
             fecha_value=fecha_value,
             tipo_pago_value=tipo_pago_value,
+            periodo_value=periodo_value,
             payment_options=PAYMENT_ACCOUNT_OPTIONS,
             result=result,
             error=error,
@@ -712,6 +718,7 @@ def create_app() -> Flask:
         success: str | None = None
         error: str | None = None
         validacion: dict[str, Any] | None = None
+        validacion_todo: dict[str, Any] | None = None
 
         if request.method == "POST":
             fecha_inicio_value = request.form.get("fecha_inicio", fecha_inicio_value).strip()
@@ -725,6 +732,24 @@ def create_app() -> Flask:
                     if not id_document_raw.isdigit():
                         raise ValueError("id_document inválido.")
                     validacion = service.validar_movimiento(int(id_document_raw), tipo_movimiento)
+                elif accion == "validar_todo":
+                    # Valida el stock de todos los pendientes visibles, los que
+                    # aun no estan enviados (estado distinto de 5).
+                    rows_all, _ = service.consultar_por_enviar(
+                        fecha_inicio=_parse_date(fecha_inicio_value),
+                        fecha_fin=_parse_date(fecha_fin_value),
+                        tipo=tipo_value,
+                    )
+                    documentos: list[tuple[int, str]] = []
+                    for r in rows_all:
+                        if str(r[3]) == "5":
+                            continue  # ya enviado
+                        id_doc = str(r[2]) if r[2] is not None else ""
+                        if id_doc.isdigit():
+                            documentos.append((int(id_doc), str(r[1] or "")))
+                    if not documentos:
+                        raise ValueError("No hay documentos pendientes por validar.")
+                    validacion_todo = service.validar_movimientos(documentos)
                 elif accion == "anular":
                     id_movement_raw = request.form.get("id_movement", "").strip()
                     if not id_movement_raw.isdigit():
@@ -823,6 +848,7 @@ def create_app() -> Flask:
             success=success,
             error=error,
             validacion=validacion,
+            validacion_todo=validacion_todo,
         )
 
     @app.route("/consultar-pago-sap", methods=["GET", "POST"])
@@ -1410,6 +1436,20 @@ def _parse_date(raw: str) -> date:
         return datetime.fromisoformat(value).date()
     except ValueError:
         return datetime.strptime(value, "%Y-%m-%d").date()
+
+
+def _rango_validar_pagos(periodo: str, hoy: date, fecha: date) -> tuple[date, date]:
+    """Rango a validar segun el boton que se apreto.
+
+    "mes_actual" va del dia 1 a hoy, porque el mes en curso no ha terminado.
+    "mes_pasado" es el mes anterior completo. Cualquier otro valor valida solo
+    la fecha del formulario."""
+    if periodo == "mes_actual":
+        return hoy.replace(day=1), hoy
+    if periodo == "mes_pasado":
+        fin = hoy.replace(day=1) - timedelta(days=1)
+        return fin.replace(day=1), fin
+    return fecha, fecha
 
 
 def _resolve_output_path(raw_path: Path) -> Path:

@@ -10,6 +10,7 @@ from typing import Any
 import requests
 
 from sap_report.application.email_templates import construir_correo
+from sap_report.application.payment_options import cuentas_sap
 from sap_report.domain import cuid_a_fecha, fecha_a_cuid
 from sap_report.infrastructure.db import (
     TICKET_NO_APLICA,
@@ -37,6 +38,16 @@ LPN_TIPO = 3
 # o tercer intento.
 LPN_INTENTOS = 10
 LPN_ESPERA_REINTENTO = 6
+
+
+# Validacion Nubefact: dias hacia atras que se muestran siempre, aunque el mes
+# en curso recien empiece. Cada dia es una consulta a SAP.
+NUBEFACT_DIAS = 30
+
+
+# Validar todo: tandas para no armar listas IN enormes contra MySQL ni SAP.
+_VALIDAR_LOTE_DOCS = 200
+_VALIDAR_LOTE_ARTICULOS = 500
 
 
 # Alta de Mattermost: el nombre viaja como argumento del script, asi que se
@@ -588,6 +599,92 @@ class ReportService:
         rows, _ = provider([id_document])
         return self._comparar_items_contra_stock(id_document, tipo, rows)
 
+    def validar_movimientos(
+        self,
+        documentos: list[tuple[int, str]],
+    ) -> dict[str, Any]:
+        """Valida el stock de varios documentos de una vez.
+
+        Agrupa por tipo para pedirle los items a MySQL en pocas consultas y
+        resuelve el stock de SAP en una sola llamada por tanda de articulos.
+        Devuelve una fila por articulo/almacen con lo necesario, lo que hay y
+        lo que falta.
+        """
+        providers = {
+            "id_Outbound": self._mysql_repository.consultar_items_outbound,
+            "id_Inbound": self._mysql_repository.consultar_items_inbound,
+        }
+        por_tipo: dict[str, list[int]] = {}
+        no_soportados: set[str] = set()
+        for id_document, tipo in documentos:
+            tipo = (tipo or "").strip()
+            if tipo not in providers:
+                no_soportados.add(tipo or "(vacio)")
+                continue
+            if id_document > 0 and id_document not in por_tipo.setdefault(tipo, []):
+                por_tipo[tipo].append(id_document)
+
+        # Items de todos los documentos, en tandas para no armar un IN gigante.
+        items: list[dict[str, Any]] = []
+        documentos_con_items: set[int] = set()
+        for tipo, ids in por_tipo.items():
+            for inicio in range(0, len(ids), _VALIDAR_LOTE_DOCS):
+                tanda = ids[inicio:inicio + _VALIDAR_LOTE_DOCS]
+                rows, cols = providers[tipo](tanda)
+                idx_doc = _find_col_index(cols, ["id_document"]) if cols else 3
+                for row in rows:
+                    articulo = str(row[0]).strip() if row[0] is not None else ""
+                    centro = str(row[1]).strip() if row[1] is not None else ""
+                    if not articulo or not centro:
+                        continue
+                    try:
+                        id_doc = int(row[idx_doc])
+                    except (TypeError, ValueError, IndexError):
+                        id_doc = 0
+                    documentos_con_items.add(id_doc)
+                    items.append({
+                        "id_document": id_doc,
+                        "tipo": tipo,
+                        # "id_Outbound" -> "Outbound", para mostrarlo en el cuadro.
+                        "movimiento": tipo.replace("id_", ""),
+                        "articulo": articulo,
+                        "almacen": centro,
+                        "necesario": _to_float(row[2]),
+                    })
+
+        # Stock de SAP: una consulta por tanda de articulos, con todos los almacenes.
+        articulos = sorted({i["articulo"] for i in items})
+        centros = sorted({i["almacen"] for i in items})
+        stock: dict[str, float] = {}
+        for inicio in range(0, len(articulos), _VALIDAR_LOTE_ARTICULOS):
+            tanda = articulos[inicio:inicio + _VALIDAR_LOTE_ARTICULOS]
+            sap_rows, sap_cols = self._sap_repository.ejecutar_prestamo_stock(tanda, centros)
+            idx_iw = _find_col_index(sap_cols, ["itemwarehouse"])
+            idx_stock = _find_col_index(sap_cols, ["stock"])
+            for row in sap_rows:
+                key = str(row[idx_iw]).strip() if row[idx_iw] is not None else ""
+                if key:
+                    stock[key] = _to_float(row[idx_stock])
+
+        filas: list[dict[str, Any]] = []
+        for item in items:
+            hay = stock.get(f"{item['articulo']}{item['almacen']}", 0.0)
+            falta = item["necesario"] - hay
+            filas.append({**item, "hay": hay, "falta": falta})
+
+        faltantes = [f for f in filas if f["falta"] > 0]
+        # Primero los documentos con mas problemas, y dentro de cada uno lo que mas falta.
+        faltantes.sort(key=lambda f: (f["id_document"], -f["falta"]))
+        todos_los_docs = {d for ids in por_tipo.values() for d in ids}
+        return {
+            "documentos": len(todos_los_docs),
+            "documentos_con_falta": len({f["id_document"] for f in faltantes}),
+            "documentos_sin_items": sorted(todos_los_docs - documentos_con_items),
+            "items_total": len(filas),
+            "faltantes": faltantes,
+            "tipos_no_soportados": sorted(no_soportados),
+        }
+
     def _comparar_items_contra_stock(
         self,
         id_document: int,
@@ -731,17 +828,18 @@ class ReportService:
 
     @staticmethod
     def _fechas_nubefact(today: date) -> list[date]:
-        """Fechas a consultar: el mes en curso hasta ayer, de la mas reciente a
-        la mas antigua. En los primeros dias del mes eso deja casi nada que ver,
-        asi que del 1 al 7 se agregan ademas los ultimos 7 dias del mes anterior."""
+        """Fechas a consultar, de la mas reciente a la mas antigua, terminando
+        en ayer.
+
+        Siempre se muestra un mes. Antes se tomaba solo el mes en curso, y al
+        empezar el mes eso dejaba la pantalla casi vacia: el dia 1 no quedaba
+        ningun dia del mes y solo se veia la semana anterior. Ahora se
+        completa siempre hasta NUBEFACT_DIAS dias hacia atras, y si el mes en
+        curso ya es mas largo que eso, se respeta el mes entero."""
         primero = today.replace(day=1)
-        fechas = [
-            today - timedelta(days=i)
-            for i in range(1, (today - primero).days + 1)
-        ]
-        if today.day <= 7:
-            fechas += [primero - timedelta(days=i) for i in range(1, 8)]
-        return fechas
+        dias_del_mes = (today - primero).days
+        dias = max(dias_del_mes, NUBEFACT_DIAS)
+        return [today - timedelta(days=i) for i in range(1, dias + 1)]
 
     def consultar_nubefact(self) -> tuple[list[dict[str, Any]], list[str]]:
         fechas = self._fechas_nubefact(date.today())
@@ -1166,21 +1264,43 @@ class ReportService:
         status_cb=None,
     ) -> dict[str, Any]:
         # Compara pagos SAP vs TUTATI para una fecha y medio de pago.
+        return self.validar_pagos_rango(fecha, fecha, account_name, status_cb)
+
+    def validar_pagos_rango(
+        self,
+        fecha_inicio: date,
+        fecha_fin: date,
+        account_name: str,
+        status_cb=None,
+    ) -> dict[str, Any]:
+        """Compara pagos SAP vs TUTATI para un rango de fechas.
+
+        Un dia suelto es el caso de fecha_inicio == fecha_fin. Las dos consultas
+        se hacen de una sola vez para todo el rango, no dia por dia."""
         if not account_name.strip():
             raise ValueError("Debe seleccionar un tipo de pago.")
+        if fecha_fin < fecha_inicio:
+            raise ValueError("La fecha fin no puede ser anterior a la fecha inicio.")
 
-        if status_cb:
-            status_cb(f"Validar pagos SAP: {fecha} | {account_name}")
-        sap_rows, sap_cols = self._sap_repository.ejecutar_validar_pagos(
-            fecha,
-            fecha,
-            account_name,
+        etiqueta = (
+            fecha_inicio.isoformat()
+            if fecha_inicio == fecha_fin
+            else f"{fecha_inicio.isoformat()} -> {fecha_fin.isoformat()}"
         )
 
-        cuid_inicio = fecha_a_cuid(datetime.combine(fecha, datetime_time.min))
-        cuid_fin = fecha_a_cuid(datetime.combine(fecha, datetime_time(23, 59, 59)))
         if status_cb:
-            status_cb(f"Validar pagos TUTATI: {fecha} | {account_name}")
+            status_cb(f"Validar pagos SAP: {etiqueta} | {account_name}")
+        # En SAP el tipo puede estar repartido en varias cuentas.
+        sap_rows, sap_cols = self._sap_repository.ejecutar_validar_pagos(
+            fecha_inicio,
+            fecha_fin,
+            cuentas_sap(account_name),
+        )
+
+        cuid_inicio = fecha_a_cuid(datetime.combine(fecha_inicio, datetime_time.min))
+        cuid_fin = fecha_a_cuid(datetime.combine(fecha_fin, datetime_time(23, 59, 59)))
+        if status_cb:
+            status_cb(f"Validar pagos TUTATI: {etiqueta} | {account_name}")
         tutati_rows, tutati_cols = self._mysql_repository.ejecutar_validar_pagos(
             cuid_inicio,
             cuid_fin,
@@ -1196,7 +1316,10 @@ class ReportService:
         )
 
         return {
-            "fecha": fecha.isoformat(),
+            "fecha": etiqueta,
+            "fecha_inicio": fecha_inicio.isoformat(),
+            "fecha_fin": fecha_fin.isoformat(),
+            "dias": (fecha_fin - fecha_inicio).days + 1,
             "tipo_pago": account_name,
             "sap_total": len(sap_rows),
             "tutati_total": len(tutati_rows),
